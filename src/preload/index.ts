@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   ChatSession,
+  KnowledgeImportEntry,
   KnowledgeImportRequest,
   KnowledgeImportResult,
   RuntimeConfig,
@@ -15,6 +16,10 @@ const api = {
   getRuntimeConfig: (): Promise<RuntimeConfig> => ipcRenderer.invoke('app:get-runtime-config'),
   pickKnowledgeFiles: (): Promise<string[]> => ipcRenderer.invoke('knowledge:pick-files'),
   pickKnowledgeFolder: (): Promise<string | null> => ipcRenderer.invoke('knowledge:pick-folder'),
+  listKnowledgeImports: (): Promise<KnowledgeImportEntry[]> =>
+    ipcRenderer.invoke('knowledge:list-imports'),
+  deleteKnowledgeImport: (rootPath: string): Promise<void> =>
+    ipcRenderer.invoke('knowledge:delete-import', rootPath),
   importKnowledge: (payload: KnowledgeImportRequest): Promise<KnowledgeImportResult> =>
     ipcRenderer.invoke('knowledge:import', payload),
 };

@@ -166,6 +166,44 @@ textarea {
   word-break: break-word;
 }
 
+.knowledge-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.knowledge-import-card {
+  padding: 12px 13px;
+  border: 1px solid rgba(129, 81, 43, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 247, 240, 0.72);
+}
+
+.knowledge-import-card p,
+.knowledge-empty {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.knowledge-import-top,
+.knowledge-import-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.knowledge-import-footer {
+  margin-top: 10px;
+}
+
+.knowledge-import-footer span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .session-list {
   display: flex;
   flex: 1;

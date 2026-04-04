@@ -3,7 +3,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ChatSession, KnowledgeImportRequest, RuntimeConfig } from '@shared/types';
-import { importKnowledge, pickKnowledgeFiles, pickKnowledgeFolder } from './knowledge';
+import {
+  deleteKnowledgeImport,
+  importKnowledge,
+  listKnowledgeImports,
+  pickKnowledgeFiles,
+  pickKnowledgeFolder,
+} from './knowledge';
 import { startPythonService } from './python';
 
 let mainWindow: BrowserWindow | null = null;
@@ -108,6 +114,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle('app:get-runtime-config', async () => runtimeConfig);
   ipcMain.handle('knowledge:pick-files', async () => pickKnowledgeFiles(mainWindow));
   ipcMain.handle('knowledge:pick-folder', async () => pickKnowledgeFolder(mainWindow));
+  ipcMain.handle('knowledge:list-imports', async () => listKnowledgeImports());
+  ipcMain.handle('knowledge:delete-import', async (_event, rootPath: string) =>
+    deleteKnowledgeImport(rootPath)
+  );
   ipcMain.handle('knowledge:import', async (_event, payload: KnowledgeImportRequest) =>
     importKnowledge(payload)
   );

@@ -1,7 +1,11 @@
-import { copyFile, mkdir, readdir, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { dialog, type BrowserWindow, type OpenDialogOptions } from 'electron';
-import type { KnowledgeImportRequest, KnowledgeImportResult } from '@shared/types';
+import type {
+  KnowledgeImportEntry,
+  KnowledgeImportRequest,
+  KnowledgeImportResult,
+} from '@shared/types';
 
 const SUPPORTED_EXTENSIONS = new Set(['.md', '.txt']);
 
@@ -11,6 +15,10 @@ function getKnowledgeRoot(): string {
 
 function getBatchRoot(kind: KnowledgeImportRequest['mode']): string {
   return path.join(getKnowledgeRoot(), 'imports', kind);
+}
+
+function getImportsRoot(): string {
+  return path.join(getKnowledgeRoot(), 'imports');
 }
 
 function createBatchId(prefix: string): string {
@@ -59,6 +67,11 @@ async function collectSupportedFiles(folderPath: string): Promise<string[]> {
   }
 
   return files;
+}
+
+async function countSupportedFiles(folderPath: string): Promise<number> {
+  const files = await collectSupportedFiles(folderPath);
+  return files.length;
 }
 
 async function copyIntoKnowledgeRoot(
@@ -163,4 +176,58 @@ export async function importKnowledge(
     skippedPaths,
     targetRoot: batchDir,
   };
+}
+
+function toImportEntry(
+  mode: KnowledgeImportRequest['mode'],
+  absolutePath: string,
+  fileCount: number,
+  updatedAt: string,
+): KnowledgeImportEntry {
+  const label = path.basename(absolutePath) || `${mode}-import`;
+  return {
+    id: `${mode}:${absolutePath}`,
+    mode,
+    label,
+    rootPath: absolutePath,
+    fileCount,
+    updatedAt,
+  };
+}
+
+export async function listKnowledgeImports(): Promise<KnowledgeImportEntry[]> {
+  const importsRoot = getImportsRoot();
+  const entries: KnowledgeImportEntry[] = [];
+
+  for (const mode of ['files', 'folder'] as const) {
+    const modeRoot = path.join(importsRoot, mode);
+    try {
+      const batches = await readdir(modeRoot, { withFileTypes: true });
+      for (const batch of batches) {
+        if (!batch.isDirectory()) {
+          continue;
+        }
+        const absolutePath = path.join(modeRoot, batch.name);
+        const fileCount = await countSupportedFiles(absolutePath);
+        const info = await stat(absolutePath);
+        entries.push(toImportEntry(mode, absolutePath, fileCount, info.mtime.toISOString()));
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return entries.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export async function deleteKnowledgeImport(rootPath: string): Promise<void> {
+  const importsRoot = path.resolve(getImportsRoot());
+  const targetPath = path.resolve(rootPath);
+  const relative = path.relative(importsRoot, targetPath);
+
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Refusing to delete a path outside knowledge/imports.');
+  }
+
+  await rm(targetPath, { recursive: true, force: true });
 }

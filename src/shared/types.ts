@@ -77,3 +77,12 @@ export interface KnowledgeImportResult {
   skippedPaths: string[];
   targetRoot: string;
 }
+
+export interface KnowledgeImportEntry {
+  id: string;
+  mode: 'files' | 'folder';
+  label: string;
+  rootPath: string;
+  fileCount: number;
+  updatedAt: string;
+}

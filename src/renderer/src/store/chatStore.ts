@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   ChatMessage,
+  KnowledgeImportEntry,
   ChatSession,
   KnowledgeStatus,
   RuntimeConfig,
@@ -20,6 +21,7 @@ interface ChatStore {
   activeSessionId?: string;
   runtime?: RuntimeConfig;
   knowledge?: KnowledgeStatus;
+  knowledgeImports: KnowledgeImportEntry[];
   sending: boolean;
   knowledgeBusy: boolean;
   error?: string;
@@ -31,6 +33,7 @@ interface ChatStore {
   sendMessage: (content: string) => Promise<void>;
   importKnowledgeFiles: () => Promise<void>;
   importKnowledgeFolder: () => Promise<void>;
+  deleteKnowledgeImport: (rootPath: string) => Promise<void>;
   reindexKnowledge: () => Promise<void>;
 }
 
@@ -65,6 +68,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   activeSessionId: undefined,
   runtime: undefined,
   knowledge: undefined,
+  knowledgeImports: [],
   sending: false,
   knowledgeBusy: false,
   error: undefined,
@@ -78,9 +82,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const locale = readStoredLocale() ?? 'en-US';
 
     let knowledge: KnowledgeStatus | undefined;
+    let knowledgeImports: KnowledgeImportEntry[] = [];
     let knowledgeError: string | undefined;
     try {
-      knowledge = await getKnowledgeStatus(runtime.backendUrl);
+      [knowledge, knowledgeImports] = await Promise.all([
+        getKnowledgeStatus(runtime.backendUrl),
+        window.electronAPI.listKnowledgeImports(),
+      ]);
     } catch (error) {
       knowledgeError = error instanceof Error ? error.message : 'Failed to load knowledge status';
     }
@@ -92,6 +100,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         activeSessionId: session.id,
         runtime,
         knowledge,
+        knowledgeImports,
         knowledgeError,
         error: undefined,
       });
@@ -103,6 +112,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       activeSessionId: sessions[0]?.id,
       runtime,
       knowledge,
+      knowledgeImports,
       knowledgeError,
       error: undefined,
     });
@@ -302,6 +312,7 @@ ${copy.backendStartHint}`,
       set({
         runtime,
         knowledge,
+        knowledgeImports: await window.electronAPI.listKnowledgeImports(),
         knowledgeBusy: false,
         knowledgeNotice: formatImportedNotice(locale, result.importedCount),
       });
@@ -332,6 +343,7 @@ ${copy.backendStartHint}`,
       set({
         runtime,
         knowledge,
+        knowledgeImports: await window.electronAPI.listKnowledgeImports(),
         knowledgeBusy: false,
         knowledgeNotice: formatImportedNotice(locale, result.importedCount),
       });
@@ -342,15 +354,42 @@ ${copy.backendStartHint}`,
       });
     }
   },
+  deleteKnowledgeImport: async (rootPath) => {
+    set({ knowledgeBusy: true, knowledgeError: undefined, knowledgeNotice: undefined });
+    try {
+      await window.electronAPI.deleteKnowledgeImport(rootPath);
+      const runtime = await resolveRuntime(get());
+      const [knowledge, knowledgeImports] = await Promise.all([
+        reindexKnowledge(runtime.backendUrl),
+        window.electronAPI.listKnowledgeImports(),
+      ]);
+      set({
+        runtime,
+        knowledge,
+        knowledgeImports,
+        knowledgeBusy: false,
+      });
+    } catch (error) {
+      set({
+        knowledgeBusy: false,
+        knowledgeError:
+          error instanceof Error ? error.message : 'Failed to delete imported knowledge',
+      });
+    }
+  },
   reindexKnowledge: async () => {
     set({ knowledgeBusy: true, knowledgeError: undefined, knowledgeNotice: undefined });
     try {
       const runtime = await resolveRuntime(get());
-      const knowledge = await reindexKnowledge(runtime.backendUrl);
+      const [knowledge, knowledgeImports] = await Promise.all([
+        reindexKnowledge(runtime.backendUrl),
+        window.electronAPI.listKnowledgeImports(),
+      ]);
       const locale = readStoredLocale() ?? 'en-US';
       set({
         runtime,
         knowledge,
+        knowledgeImports,
         knowledgeBusy: false,
         knowledgeNotice: formatReindexNotice(locale, knowledge.documents),
       });

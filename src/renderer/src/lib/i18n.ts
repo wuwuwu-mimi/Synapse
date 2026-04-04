@@ -37,6 +37,10 @@ export interface AppMessages {
   knowledgeBase: string;
   importFiles: string;
   importFolder: string;
+  importedHistory: string;
+  deleteImport: string;
+  noImports: string;
+  filesUnit: string;
   reindex: string;
   importing: string;
   documents: string;
@@ -101,6 +105,10 @@ export const messages: Record<AppLocale, AppMessages> = {
     knowledgeBase: '知识库',
     importFiles: '导入文件',
     importFolder: '导入文件夹',
+    importedHistory: '导入历史',
+    deleteImport: '删除',
+    noImports: '暂时还没有导入记录。',
+    filesUnit: '个文件',
     reindex: '重新索引',
     importing: '处理中...',
     documents: '分块数',
@@ -161,6 +169,10 @@ export const messages: Record<AppLocale, AppMessages> = {
     knowledgeBase: 'Knowledge Base',
     importFiles: 'Import Files',
     importFolder: 'Import Folder',
+    importedHistory: 'Import History',
+    deleteImport: 'Delete',
+    noImports: 'No imported batches yet.',
+    filesUnit: 'files',
     reindex: 'Reindex',
     importing: 'Working...',
     documents: 'Chunks',

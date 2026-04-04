@@ -24,6 +24,7 @@ export default function App(): JSX.Element {
   const activeSessionId = useChatStore((state) => state.activeSessionId);
   const runtime = useChatStore((state) => state.runtime);
   const knowledge = useChatStore((state) => state.knowledge);
+  const knowledgeImports = useChatStore((state) => state.knowledgeImports);
   const sending = useChatStore((state) => state.sending);
   const knowledgeBusy = useChatStore((state) => state.knowledgeBusy);
   const error = useChatStore((state) => state.error);
@@ -35,6 +36,7 @@ export default function App(): JSX.Element {
   const sendMessage = useChatStore((state) => state.sendMessage);
   const importKnowledgeFiles = useChatStore((state) => state.importKnowledgeFiles);
   const importKnowledgeFolder = useChatStore((state) => state.importKnowledgeFolder);
+  const deleteKnowledgeImport = useChatStore((state) => state.deleteKnowledgeImport);
   const reindexKnowledge = useChatStore((state) => state.reindexKnowledge);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const copy = messages[locale];
@@ -176,6 +178,36 @@ export default function App(): JSX.Element {
               <span className="knowledge-stat-label">{copy.model}</span>
               <strong>{knowledge?.activeModel ?? copy.fallback}</strong>
             </div>
+          </div>
+
+          <div className="knowledge-history">
+            <div className="section-title">{copy.importedHistory}</div>
+            {knowledgeImports.length ? (
+              knowledgeImports.map((entry) => (
+                <div key={entry.id} className="knowledge-import-card">
+                  <div className="knowledge-import-top">
+                    <strong>{entry.label}</strong>
+                    <Tag color={entry.mode === 'folder' ? 'blue' : 'purple'}>{entry.mode}</Tag>
+                  </div>
+                  <p>{entry.rootPath}</p>
+                  <div className="knowledge-import-footer">
+                    <span>
+                      {entry.fileCount} {copy.filesUnit} | {timeFormatter.format(new Date(entry.updatedAt))}
+                    </span>
+                    <Button
+                      size="small"
+                      danger
+                      disabled={knowledgeBusy}
+                      onClick={() => void deleteKnowledgeImport(entry.rootPath)}
+                    >
+                      {copy.deleteImport}
+                    </Button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="knowledge-empty">{copy.noImports}</p>
+            )}
           </div>
         </section>
 

@@ -2,6 +2,7 @@
 
 import type {
   ChatSession,
+  KnowledgeImportEntry,
   KnowledgeImportRequest,
   KnowledgeImportResult,
   RuntimeConfig,
@@ -16,6 +17,8 @@ declare global {
       getRuntimeConfig: () => Promise<RuntimeConfig>;
       pickKnowledgeFiles: () => Promise<string[]>;
       pickKnowledgeFolder: () => Promise<string | null>;
+      listKnowledgeImports: () => Promise<KnowledgeImportEntry[]>;
+      deleteKnowledgeImport: (rootPath: string) => Promise<void>;
       importKnowledge: (payload: KnowledgeImportRequest) => Promise<KnowledgeImportResult>;
     };
   }
