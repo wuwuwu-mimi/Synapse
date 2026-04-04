@@ -1,0 +1,13 @@
+node_modules
+dist
+out
+.vite
+.env
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+knowledge/imports
+.DS_Store
