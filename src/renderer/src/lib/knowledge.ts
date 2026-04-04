@@ -9,6 +9,10 @@ function toCamelStatus(payload: {
   documents: number;
   database_connected: boolean;
   database_error?: string | null;
+  redis_connected?: boolean;
+  redis_error?: string | null;
+  embedding_provider?: string | null;
+  embedding_model?: string | null;
   last_indexed_at?: string | null;
   llm_enabled: boolean;
   active_model?: string | null;
@@ -18,6 +22,10 @@ function toCamelStatus(payload: {
     documents: payload.documents,
     databaseConnected: payload.database_connected,
     databaseError: payload.database_error,
+    redisConnected: payload.redis_connected,
+    redisError: payload.redis_error,
+    embeddingProvider: payload.embedding_provider,
+    embeddingModel: payload.embedding_model,
     lastIndexedAt: payload.last_indexed_at,
     llmEnabled: payload.llm_enabled,
     activeModel: payload.active_model,
@@ -40,6 +48,10 @@ export async function getKnowledgeStatus(backendUrl: string): Promise<KnowledgeS
     documents: number;
     database_connected: boolean;
     database_error?: string | null;
+    redis_connected?: boolean;
+    redis_error?: string | null;
+    embedding_provider?: string | null;
+    embedding_model?: string | null;
     last_indexed_at?: string | null;
     llm_enabled: boolean;
     active_model?: string | null;
@@ -57,6 +69,10 @@ export async function importKnowledgeIndex(
     documents: number;
     database_connected: boolean;
     database_error?: string | null;
+    redis_connected?: boolean;
+    redis_error?: string | null;
+    embedding_provider?: string | null;
+    embedding_model?: string | null;
     last_indexed_at?: string | null;
     llm_enabled: boolean;
     active_model?: string | null;
@@ -77,6 +93,10 @@ export async function reindexKnowledge(backendUrl: string): Promise<KnowledgeSta
     documents: number;
     database_connected: boolean;
     database_error?: string | null;
+    redis_connected?: boolean;
+    redis_error?: string | null;
+    embedding_provider?: string | null;
+    embedding_model?: string | null;
     last_indexed_at?: string | null;
     llm_enabled: boolean;
     active_model?: string | null;

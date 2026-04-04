@@ -119,6 +119,13 @@ textarea {
   gap: 12px;
 }
 
+.knowledge-status-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .knowledge-header h2 {
   margin: 4px 0 0;
   font-size: 1.05rem;
@@ -130,12 +137,33 @@ textarea {
   gap: 8px;
 }
 
-.knowledge-meta {
+.knowledge-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.knowledge-stat {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  padding: 12px 13px;
+  border: 1px solid rgba(129, 81, 43, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 247, 240, 0.72);
+}
+
+.knowledge-stat-label {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.knowledge-stat strong {
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .session-list {
@@ -328,6 +356,10 @@ textarea {
   .header-actions {
     flex-wrap: wrap;
     justify-content: flex-end;
+  }
+
+  .knowledge-meta-grid {
+    grid-template-columns: 1fr;
   }
 
   .message-bubble {

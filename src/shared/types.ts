@@ -57,6 +57,10 @@ export interface KnowledgeStatus {
   documents: number;
   databaseConnected: boolean;
   databaseError?: string | null;
+  redisConnected?: boolean;
+  redisError?: string | null;
+  embeddingProvider?: string | null;
+  embeddingModel?: string | null;
   lastIndexedAt?: string | null;
   llmEnabled: boolean;
   activeModel?: string | null;

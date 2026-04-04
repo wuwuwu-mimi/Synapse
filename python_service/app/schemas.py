@@ -48,6 +48,8 @@ class KnowledgeStatusResponse(BaseModel):
     documents: int
     database_connected: bool
     database_error: str | None = None
+    redis_connected: bool = False
+    redis_error: str | None = None
     last_indexed_at: str | None = None
     embedding_provider: str = "hash"
     embedding_model: str | None = None

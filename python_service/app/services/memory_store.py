@@ -14,38 +14,47 @@ class MemoryStore:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.redis: Redis | None = None
+        self.redis_error: str | None = None
         self.summary_by_session: dict[str, str] = {}
         self.facts_by_session: dict[str, list[MemoryFact]] = defaultdict(list)
+        self.state_by_session: dict[str, dict[str, str | int]] = {}
         self._connect_redis()
+
+    @property
+    def redis_connected(self) -> bool:
+        return self.redis is not None
 
     def _connect_redis(self) -> None:
         try:
             client = Redis.from_url(self.settings.redis_url, decode_responses=True)
             client.ping()
             self.redis = client
-        except Exception:
+            self.redis_error = None
+        except Exception as exc:
             self.redis = None
+            self.redis_error = str(exc)
 
     def _summary_key(self, session_id: str) -> str:
-        return f"myrag:session:{session_id}:summary"
+        return f"synapse:session:{session_id}:summary"
 
     def _facts_key(self, session_id: str) -> str:
-        return f"myrag:session:{session_id}:facts"
+        return f"synapse:session:{session_id}:facts"
+
+    def _state_key(self, session_id: str) -> str:
+        return f"synapse:session:{session_id}:state"
 
     def build_context(self, session_id: str, history: list[ChatMessage]) -> tuple[str, list[MemoryFact]]:
         if not history:
-            return self.summary_by_session.get(session_id, ""), self._load_facts(session_id)
+            self._load_state(session_id)
+            return self._load_summary(session_id), self._load_facts(session_id)
 
         recent_window = history[-self.settings.short_memory_window :]
         summary = self._summarize_window(recent_window)
         facts = self._merge_facts(session_id, self._extract_facts(history))
 
         self.set_summary(session_id, summary)
-        if self.redis is not None:
-            self.redis.set(
-                self._facts_key(session_id),
-                json.dumps([fact.model_dump() for fact in facts], ensure_ascii=False),
-            )
+        self._save_facts(session_id, facts)
+        self._save_state(session_id, history, summary, facts)
 
         return summary, facts
 
@@ -53,6 +62,17 @@ class MemoryStore:
         self.summary_by_session[session_id] = summary
         if self.redis is not None:
             self.redis.set(self._summary_key(session_id), summary)
+
+    def _load_summary(self, session_id: str) -> str:
+        if session_id in self.summary_by_session:
+            return self.summary_by_session[session_id]
+
+        if self.redis is None:
+            return ""
+
+        summary = self.redis.get(self._summary_key(session_id)) or ""
+        self.summary_by_session[session_id] = summary
+        return summary
 
     def _load_facts(self, session_id: str) -> list[MemoryFact]:
         if self.facts_by_session.get(session_id):
@@ -68,6 +88,59 @@ class MemoryStore:
         facts = [MemoryFact(**item) for item in json.loads(payload)]
         self.facts_by_session[session_id] = facts
         return facts
+
+    def _save_facts(self, session_id: str, facts: list[MemoryFact]) -> None:
+        if self.redis is None:
+            return
+        self.redis.set(
+            self._facts_key(session_id),
+            json.dumps([fact.model_dump() for fact in facts], ensure_ascii=False),
+        )
+
+    def _load_state(self, session_id: str) -> dict[str, str | int]:
+        if session_id in self.state_by_session:
+            return self.state_by_session[session_id]
+
+        if self.redis is None:
+            return {}
+
+        payload = self.redis.get(self._state_key(session_id))
+        if not payload:
+            return {}
+
+        state = json.loads(payload)
+        if isinstance(state, dict):
+            self.state_by_session[session_id] = state
+            return state
+        return {}
+
+    def _save_state(
+        self,
+        session_id: str,
+        history: list[ChatMessage],
+        summary: str,
+        facts: list[MemoryFact],
+    ) -> None:
+        state = {
+            'summary': summary,
+            'fact_count': len(facts),
+            'turn_count': len(history),
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+            'last_user_message': self._latest_message_content(history, 'user'),
+            'last_assistant_message': self._latest_message_content(history, 'assistant'),
+        }
+        self.state_by_session[session_id] = state
+
+        if self.redis is None:
+            return
+
+        self.redis.set(self._state_key(session_id), json.dumps(state, ensure_ascii=False))
+
+    def _latest_message_content(self, history: list[ChatMessage], role: str) -> str:
+        for message in reversed(history):
+            if message.role == role and message.content.strip():
+                return message.content.strip()[:160]
+        return ''
 
     def _merge_facts(self, session_id: str, new_facts: list[MemoryFact]) -> list[MemoryFact]:
         existing = {fact.content: fact for fact in self._load_facts(session_id)}
@@ -102,12 +175,12 @@ class MemoryStore:
 
     def _extract_facts(self, history: list[ChatMessage]) -> list[MemoryFact]:
         patterns: list[tuple[re.Pattern[str], float]] = [
-            (re.compile(r"\u6211\u662f([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.86),
-            (re.compile(r"\u6211\u53eb([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.88),
-            (re.compile(r"\u6211\u559c\u6b22([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.82),
-            (re.compile(r"\u6211\u5728([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.78),
-            (re.compile(r"\u6211\u7684\u9879\u76ee\u662f([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.84),
-            (re.compile(r"\u8bf7\u8bb0\u4f4f([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.92),
+            (re.compile("\u6211\u662f([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.86),
+            (re.compile("\u6211\u53eb([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.88),
+            (re.compile("\u6211\u559c\u6b22([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.82),
+            (re.compile("\u6211\u5728([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.78),
+            (re.compile("\u6211\u7684\u9879\u76ee\u662f([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.84),
+            (re.compile("\u8bf7\u8bb0\u4f4f([^\uff0c\u3002\uff01\uff1f\n]+)"), 0.92),
         ]
 
         facts: list[MemoryFact] = []

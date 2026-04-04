@@ -1,4 +1,4 @@
-export type AppLocale = 'zh-CN' | 'en-US';
+﻿export type AppLocale = 'zh-CN' | 'en-US';
 
 export interface AppMessages {
   workspace: string;
@@ -42,8 +42,16 @@ export interface AppMessages {
   documents: string;
   lastIndexed: string;
   database: string;
+  redis: string;
+  embedding: string;
+  provider: string;
+  serviceErrors: string;
+  none: string;
+  status: string;
   connected: string;
   disconnected: string;
+  enabled: string;
+  disabled: string;
   languageChinese: string;
   generation: string;
   noGeneration: string;
@@ -98,8 +106,16 @@ export const messages: Record<AppLocale, AppMessages> = {
     documents: '分块数',
     lastIndexed: '上次索引',
     database: '数据库',
+    redis: 'Redis',
+    embedding: 'Embedding',
+    provider: '提供方',
+    serviceErrors: '服务错误',
+    none: '无',
+    status: '状态',
     connected: '已连接',
     disconnected: '未连接',
+    enabled: '已启用',
+    disabled: '未启用',
     languageChinese: '中文',
     generation: '生成方式',
     noGeneration: '暂时还没有生成信息。',
@@ -150,8 +166,16 @@ export const messages: Record<AppLocale, AppMessages> = {
     documents: 'Chunks',
     lastIndexed: 'Last indexed',
     database: 'Database',
+    redis: 'Redis',
+    embedding: 'Embedding',
+    provider: 'Provider',
+    serviceErrors: 'Service errors',
+    none: 'None',
+    status: 'Status',
     connected: 'Connected',
     disconnected: 'Disconnected',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
     languageChinese: '中文',
     generation: 'Generation',
     noGeneration: 'No generation metadata yet.',

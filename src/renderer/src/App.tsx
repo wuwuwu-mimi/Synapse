@@ -81,6 +81,7 @@ export default function App(): JSX.Element {
     : copy.noIndexYet;
   const generationLabel =
     currentSession?.inspector.generationMode === 'llm' ? copy.llm : copy.fallback;
+  const llmStatusLabel = knowledge?.llmEnabled ? copy.enabled : copy.disabled;
 
   return (
     <div className="app-shell">
@@ -119,13 +120,24 @@ export default function App(): JSX.Element {
               <span className="eyebrow">{copy.knowledgeBase}</span>
               <h2>{copy.knowledgeBase}</h2>
             </div>
-            <Tag color={knowledge?.databaseConnected ? 'success' : 'error'}>
-              {copy.database}: {knowledge?.databaseConnected ? copy.connected : copy.disconnected}
-            </Tag>
+            <div className="knowledge-status-tags">
+              <Tag color={knowledge?.databaseConnected ? 'success' : 'error'}>
+                {copy.database}: {knowledge?.databaseConnected ? copy.connected : copy.disconnected}
+              </Tag>
+              <Tag color={knowledge?.redisConnected ? 'success' : 'warning'}>
+                {copy.redis}: {knowledge?.redisConnected ? copy.connected : copy.disconnected}
+              </Tag>
+            </div>
           </div>
 
           {knowledgeError ? <Alert type="error" showIcon message={knowledgeError} /> : null}
           {knowledgeNotice ? <Alert type="success" showIcon message={knowledgeNotice} /> : null}
+          {knowledge?.databaseError ? (
+            <Alert type="warning" showIcon message={`${copy.database}: ${knowledge.databaseError}`} />
+          ) : null}
+          {knowledge?.redisError ? (
+            <Alert type="warning" showIcon message={`${copy.redis}: ${knowledge.redisError}`} />
+          ) : null}
 
           <div className="knowledge-actions">
             <Button size="small" onClick={() => void importKnowledgeFiles()} disabled={knowledgeBusy}>
@@ -139,10 +151,31 @@ export default function App(): JSX.Element {
             </Button>
           </div>
 
-          <div className="knowledge-meta">
-            <span>{copy.documents}: {knowledge?.documents ?? 0}</span>
-            <span>{copy.lastIndexed}: {lastIndexed}</span>
-            <span>{copy.model}: {knowledge?.activeModel ?? copy.fallback}</span>
+          <div className="knowledge-meta-grid">
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.documents}</span>
+              <strong>{knowledge?.documents ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.lastIndexed}</span>
+              <strong>{lastIndexed}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.embedding}</span>
+              <strong>{knowledge?.embeddingModel ?? copy.fallback}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.provider}</span>
+              <strong>{knowledge?.embeddingProvider ?? copy.none}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.llm}</span>
+              <strong>{llmStatusLabel}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.model}</span>
+              <strong>{knowledge?.activeModel ?? copy.fallback}</strong>
+            </div>
           </div>
         </section>
 
