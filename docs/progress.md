@@ -39,6 +39,7 @@
   - `mxbai-embed-large:latest`
   - `bge-m3:latest`
 - 已接入 OpenAI 兼容 `chat/completions` 接口
+- 已支持上游原生流式 LLM 返回
 - 未启用真实 LLM 时仍可走 fallback 回答
 
 ### 5. 记忆能力
@@ -75,10 +76,10 @@
 - Ollama embedding 调用正常
 - 增量索引验证通过：第二次刷新可复用已有 chunk
 - 去重验证通过：重复文档不会导致知识 chunk 重复写入
+- 模拟上游流式响应验证通过：可逐段转发到前端 SSE
 
 ## 当前已知限制
 
-- 上游 LLM 仍不是原生流式透传
 - 完整消息历史尚未统一迁移到 Redis
 - 知识库冲突提示仍较基础，缺少更细的差异预览
 - 自动化测试覆盖仍不足

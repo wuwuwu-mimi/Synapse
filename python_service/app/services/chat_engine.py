@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
-from app.schemas import ChatFinalEvent, ChatMessage, RetrievalSource
+from app.schemas import ChatFinalEvent, ChatMessage, MemoryFact, RetrievalSource
 from app.services.llm_service import LLMService
 from app.services.memory_store import MemoryStore
 from app.services.retrieval import RetrievalService
+
+
+@dataclass
+class ReplyContext:
+    summary: str
+    rewritten_query: str
+    facts: list[MemoryFact]
+    sources: list[RetrievalSource]
 
 
 class ChatEngine:
@@ -19,53 +29,67 @@ class ChatEngine:
         self.retrieval_service = retrieval_service
         self.llm_service = llm_service
 
-    async def prepare_reply(
+    async def stream_reply(
         self, session_id: str, query: str, history: list[ChatMessage]
-    ) -> tuple[str, ChatFinalEvent]:
+    ) -> AsyncIterator[tuple[str, dict]]:
+        context = await self._prepare_context(session_id, query, history)
+
+        if self.llm_service.enabled:
+            emitted = False
+            answer_stream = self.llm_service.stream_answer(
+                query,
+                context.summary,
+                [fact.content for fact in context.facts],
+                [
+                    {
+                        'title': source.title,
+                        'source': source.source,
+                        'snippet': source.snippet,
+                    }
+                    for source in context.sources[:4]
+                ],
+            )
+            try:
+                while True:
+                    chunk = await asyncio.to_thread(self._next_chunk, answer_stream)
+                    if chunk is None:
+                        break
+                    emitted = True
+                    yield 'delta', {'content': chunk}
+            except Exception:
+                if emitted:
+                    raise
+            else:
+                if emitted:
+                    yield 'done', self._build_final_event(
+                        context,
+                        generation_mode='llm',
+                        model=self.llm_service.active_model,
+                    ).model_dump()
+                    return
+
+        answer = self._compose_fallback_answer(query, context.summary, context.facts, context.sources)
+        for chunk in self.chunk_text(answer):
+            yield 'delta', {'content': chunk}
+
+        yield 'done', self._build_final_event(context).model_dump()
+
+    async def _prepare_context(
+        self, session_id: str, query: str, history: list[ChatMessage]
+    ) -> ReplyContext:
         summary, facts = self.memory_store.build_context(session_id, history)
         rewritten_query, sources = self.retrieval_service.retrieve(session_id, query, facts)
-
-        generation_mode = 'fallback'
-        model: str | None = None
-        answer = self._compose_fallback_answer(query, summary, facts, sources)
 
         refined_summary = await self._refine_summary(history, summary)
         if refined_summary:
             summary = refined_summary
             self.memory_store.set_summary(session_id, summary)
 
-        if self.llm_service.enabled:
-            try:
-                answer = await asyncio.to_thread(
-                    self.llm_service.answer,
-                    query,
-                    summary,
-                    [fact.content for fact in facts],
-                    [
-                        {
-                            'title': source.title,
-                            'source': source.source,
-                            'snippet': source.snippet,
-                        }
-                        for source in sources[:4]
-                    ],
-                )
-                generation_mode = 'llm'
-                model = self.llm_service.active_model
-            except Exception:
-                generation_mode = 'fallback'
-                model = None
-
-        return (
-            answer,
-            ChatFinalEvent(
-                summary=summary,
-                rewritten_query=rewritten_query,
-                facts=facts,
-                sources=sources,
-                generation_mode=generation_mode,
-                model=model,
-            ),
+        return ReplyContext(
+            summary=summary,
+            rewritten_query=rewritten_query,
+            facts=facts,
+            sources=sources,
         )
 
     async def _refine_summary(self, history: list[ChatMessage], summary: str) -> str | None:
@@ -79,6 +103,24 @@ class ChatEngine:
 
     def chunk_text(self, text: str, chunk_size: int = 28) -> list[str]:
         return [text[index : index + chunk_size] for index in range(0, len(text), chunk_size)]
+
+    def _build_final_event(
+        self,
+        context: ReplyContext,
+        generation_mode: str = 'fallback',
+        model: str | None = None,
+    ) -> ChatFinalEvent:
+        return ChatFinalEvent(
+            summary=context.summary,
+            rewritten_query=context.rewritten_query,
+            facts=context.facts,
+            sources=context.sources,
+            generation_mode=generation_mode,
+            model=model,
+        )
+
+    def _next_chunk(self, answer_stream) -> str | None:
+        return next(answer_stream, None)
 
     def _compose_fallback_answer(
         self,

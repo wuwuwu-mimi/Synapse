@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from urllib import error, request
 
 from app.config import Settings
@@ -38,7 +39,138 @@ class LLMService:
         if not transcript:
             return None
 
-        prompt_messages = [
+        return self._complete(
+            self._summary_messages(transcript, fallback_summary),
+            model=self.settings.summary_model,
+            temperature=0.1,
+        )
+
+    def answer(
+        self,
+        query: str,
+        summary: str,
+        facts: list[str],
+        sources: list[dict[str, str]],
+    ) -> str:
+        return self._complete(
+            self._answer_messages(query, summary, facts, sources),
+            model=self.settings.llm_model,
+            temperature=self.settings.llm_temperature,
+        )
+
+    def stream_answer(
+        self,
+        query: str,
+        summary: str,
+        facts: list[str],
+        sources: list[dict[str, str]],
+    ) -> Iterator[str]:
+        messages = self._answer_messages(query, summary, facts, sources)
+        response = self._request_completion(
+            messages,
+            model=self.settings.llm_model,
+            temperature=self.settings.llm_temperature,
+            stream=True,
+        )
+        emitted = False
+
+        try:
+            while True:
+                raw_line = response.readline()
+                if not raw_line:
+                    break
+
+                line = raw_line.decode("utf-8", errors="ignore").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    break
+
+                chunk = self._extract_stream_content(payload)
+                if not chunk:
+                    continue
+
+                emitted = True
+                yield chunk
+        finally:
+            response.close()
+
+        if not emitted:
+            raise RuntimeError("LLM stream ended before any content was received.")
+
+    def _complete(
+        self,
+        messages: list[dict[str, str]],
+        model: str,
+        temperature: float,
+    ) -> str:
+        with self._request_completion(
+            messages,
+            model=model,
+            temperature=temperature,
+            stream=False,
+        ) as response:
+            body = json.loads(response.read().decode("utf-8"))
+
+        choices = body.get("choices") or []
+        if not choices:
+            raise RuntimeError("LLM response did not include any choices.")
+
+        content = choices[0].get("message", {}).get("content", "")
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("LLM response did not include message content.")
+
+        return content.strip()
+
+    def _request_completion(
+        self,
+        messages: list[dict[str, str]],
+        model: str,
+        temperature: float,
+        stream: bool,
+    ):
+        payload = json.dumps(
+            {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "stream": stream,
+            }
+        ).encode("utf-8")
+
+        req = request.Request(
+            url=self._endpoint(),
+            data=payload,
+            headers=self._headers(),
+            method="POST",
+        )
+
+        try:
+            return request.urlopen(req, timeout=60)
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"LLM request failed: {exc.code} {detail}".strip()) from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"LLM request failed: {exc.reason}") from exc
+
+    def _extract_stream_content(self, payload: str) -> str:
+        body = json.loads(payload)
+        choices = body.get("choices") or []
+        if not choices:
+            return ""
+
+        delta = choices[0].get("delta") or {}
+        content = delta.get("content")
+        return content if isinstance(content, str) else ""
+
+    def _summary_messages(
+        self,
+        transcript: str,
+        fallback_summary: str,
+    ) -> list[dict[str, str]]:
+        return [
             {
                 "role": "system",
                 "content": (
@@ -55,16 +187,15 @@ class LLMService:
                 ),
             },
         ]
-        return self._complete(prompt_messages, model=self.settings.summary_model, temperature=0.1)
 
-    def answer(
+    def _answer_messages(
         self,
         query: str,
         summary: str,
         facts: list[str],
         sources: list[dict[str, str]],
-    ) -> str:
-        prompt_messages = [
+    ) -> list[dict[str, str]]:
+        return [
             {
                 "role": "system",
                 "content": (
@@ -85,48 +216,6 @@ class LLMService:
                 ),
             },
         ]
-        return self._complete(prompt_messages, model=self.settings.llm_model, temperature=self.settings.llm_temperature)
-
-    def _complete(
-        self,
-        messages: list[dict[str, str]],
-        model: str,
-        temperature: float,
-    ) -> str:
-        payload = json.dumps(
-            {
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "stream": False,
-            }
-        ).encode("utf-8")
-
-        req = request.Request(
-            url=self._endpoint(),
-            data=payload,
-            headers=self._headers(),
-            method="POST",
-        )
-
-        try:
-            with request.urlopen(req, timeout=60) as response:
-                body = json.loads(response.read().decode("utf-8"))
-        except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"LLM request failed: {exc.code} {detail}".strip()) from exc
-        except error.URLError as exc:
-            raise RuntimeError(f"LLM request failed: {exc.reason}") from exc
-
-        choices = body.get("choices") or []
-        if not choices:
-            raise RuntimeError("LLM response did not include any choices.")
-
-        content = choices[0].get("message", {}).get("content", "")
-        if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("LLM response did not include message content.")
-
-        return content.strip()
 
     def _endpoint(self) -> str:
         base_url = self.settings.llm_base_url.rstrip("/")

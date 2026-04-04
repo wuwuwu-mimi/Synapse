@@ -134,13 +134,12 @@ async def retrieve(request: RetrieveRequest) -> RetrieveResponse:
 async def chat_stream(request: ChatRequest) -> StreamingResponse:
     async def event_stream():
         try:
-            answer, final_event = await chat_engine.prepare_reply(
+            async for event_name, payload in chat_engine.stream_reply(
                 request.session_id, request.query, request.history
-            )
-            for chunk in chat_engine.chunk_text(answer):
-                yield sse('delta', {'content': chunk})
-                await asyncio.sleep(0.03)
-            yield sse('done', final_event.model_dump())
+            ):
+                yield sse(event_name, payload)
+                if event_name == 'delta':
+                    await asyncio.sleep(0.01)
         except Exception as exc:
             yield sse('error', {'detail': str(exc)})
 
