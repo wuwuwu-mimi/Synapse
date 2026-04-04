@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
@@ -15,6 +17,20 @@ from app.schemas import MemoryFact, RetrievalSource
 from app.services.embedding_service import EmbeddingService
 from app.services.postgres_sql import BOOTSTRAP_SQL, HYBRID_SEARCH_SQL
 
+INDEX_STATE_VERSION = 1
+
+
+@dataclass
+class RawKnowledgeChunk:
+    id: str
+    title: str
+    source: str
+    snippet: str
+    content: str
+    search_text: str
+    chunk_hash: str
+    source_hash: str
+
 
 @dataclass
 class KnowledgeChunk:
@@ -25,6 +41,31 @@ class KnowledgeChunk:
     content: str
     search_text: str
     embedding: list[float]
+    chunk_hash: str
+    source_hash: str
+
+
+@dataclass
+class DatabaseChunk:
+    id: str
+    title: str
+    source: str
+    snippet: str
+    content: str
+    search_text: str
+    embedding: list[float]
+    metadata: dict[str, object]
+
+
+@dataclass
+class IndexStats:
+    source_count: int = 0
+    total_chunks: int = 0
+    deduplicated_chunks: int = 0
+    reused_chunks: int = 0
+    new_chunks: int = 0
+    removed_chunks: int = 0
+    indexing_mode: str = "incremental"
 
 
 class RetrievalService:
@@ -36,6 +77,7 @@ class RetrievalService:
         self._database_connected = False
         self._database_error: str | None = None
         self._last_indexed_at: str | None = None
+        self._index_stats = IndexStats()
 
     @property
     def document_count(self) -> int:
@@ -61,19 +103,72 @@ class RetrievalService:
     def embedding_model(self) -> str | None:
         return self.embedding_service.active_model
 
+    @property
+    def indexed_sources(self) -> int:
+        return self._index_stats.source_count
+
+    @property
+    def deduplicated_chunks(self) -> int:
+        return self._index_stats.deduplicated_chunks
+
+    @property
+    def reused_chunks(self) -> int:
+        return self._index_stats.reused_chunks
+
+    @property
+    def new_chunks(self) -> int:
+        return self._index_stats.new_chunks
+
+    @property
+    def removed_chunks(self) -> int:
+        return self._index_stats.removed_chunks
+
+    @property
+    def indexing_mode(self) -> str:
+        return self._index_stats.indexing_mode
+
     def refresh_documents(self) -> None:
+        raw_chunks: list[RawKnowledgeChunk] = []
+        next_state: dict[str, object] | None = None
+        base_stats = IndexStats()
+
         try:
-            chunks = self._load_local_chunks()
+            previous_state = self._load_index_state()
+            raw_chunks, next_state, base_stats = self._collect_raw_chunks(previous_state)
+
             self._bootstrap_database()
-            self._sync_chunks_to_database(chunks)
+            existing_chunks = self._load_database_chunks()
+            chunks = self._materialize_chunks(raw_chunks, existing_chunks)
+            removed_chunks = self._sync_chunks_to_database(chunks, existing_chunks)
+            self._save_index_state(next_state)
+
             self._chunks = chunks
-            self._document_count = len(chunks)
             self._document_count = self._count_database_chunks()
             self._database_connected = True
             self._database_error = None
+            self._index_stats = IndexStats(
+                source_count=base_stats.source_count,
+                total_chunks=base_stats.total_chunks,
+                deduplicated_chunks=base_stats.deduplicated_chunks,
+                reused_chunks=sum(1 for chunk in chunks if chunk.id in existing_chunks),
+                new_chunks=sum(1 for chunk in chunks if chunk.id not in existing_chunks),
+                removed_chunks=removed_chunks,
+            )
         except Exception as exc:
             self._database_connected = False
             self._database_error = str(exc)
+            self._index_stats = base_stats
+
+            if raw_chunks:
+                try:
+                    self._chunks = self._materialize_chunks(raw_chunks, {})
+                    self._document_count = len(self._chunks)
+                except Exception:
+                    self._chunks = []
+                    self._document_count = 0
+            else:
+                self._chunks = []
+                self._document_count = 0
         finally:
             self._last_indexed_at = datetime.now(timezone.utc).isoformat()
 
@@ -126,25 +221,65 @@ class RetrievalService:
                 self._database_error = str(exc)
 
         return self._retrieve_from_memory(query)
-
-    def _load_local_chunks(self) -> list[KnowledgeChunk]:
-        chunks: list[KnowledgeChunk] = []
+    def _collect_raw_chunks(
+        self, previous_state: dict[str, object]
+    ) -> tuple[list[RawKnowledgeChunk], dict[str, object], IndexStats]:
+        candidates: list[RawKnowledgeChunk] = []
+        state_sources: dict[str, object] = {}
         knowledge_dir = self.settings.knowledge_path
+        previous_sources = previous_state.get("sources", {})
+
         if not knowledge_dir.exists():
-            return chunks
+            return [], {"version": INDEX_STATE_VERSION, "sources": {}}, IndexStats()
 
-        for file_path in sorted(knowledge_dir.rglob("*")):
-            if file_path.suffix.lower() not in {".md", ".txt"} or not file_path.is_file():
+        source_paths = [
+            file_path
+            for file_path in sorted(knowledge_dir.rglob("*"))
+            if file_path.is_file() and file_path.suffix.lower() in {".md", ".txt"}
+        ]
+
+        indexed_source_count = 0
+
+        for file_path in source_paths:
+            relative_source = str(file_path.relative_to(knowledge_dir)).replace("\\", "/")
+            content = file_path.read_text(encoding="utf-8")
+            if not content.strip():
                 continue
-            chunks.extend(self._chunk_file(file_path))
 
-        return chunks
+            indexed_source_count += 1
+            source_hash = self._hash_text(content)
+            cached = previous_sources.get(relative_source) if isinstance(previous_sources, dict) else None
+            chunks = self._chunks_from_state(relative_source, source_hash, cached)
+            if chunks is None:
+                chunks = self._chunk_file(file_path, relative_source, content, source_hash)
 
-    def _chunk_file(self, file_path: Path) -> list[KnowledgeChunk]:
-        content = file_path.read_text(encoding="utf-8")
+            state_sources[relative_source] = {
+                "source_hash": source_hash,
+                "chunks": [self._chunk_to_state(chunk) for chunk in chunks],
+            }
+            candidates.extend(chunks)
+
+        deduplicated = self._deduplicate_chunks(candidates)
+        stats = IndexStats(
+            source_count=indexed_source_count,
+            total_chunks=len(candidates),
+            deduplicated_chunks=max(0, len(candidates) - len(deduplicated)),
+        )
+        return deduplicated, {
+            "version": INDEX_STATE_VERSION,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "sources": state_sources,
+        }, stats
+
+    def _chunk_file(
+        self,
+        file_path: Path,
+        relative_source: str,
+        content: str,
+        source_hash: str,
+    ) -> list[RawKnowledgeChunk]:
         sections = re.split(r"\n(?=#)", content)
-        chunks: list[KnowledgeChunk] = []
-        relative_source = str(file_path.relative_to(self.settings.knowledge_path)).replace("\\", "/")
+        chunks: list[RawKnowledgeChunk] = []
 
         for section in sections:
             normalized = section.strip()
@@ -159,76 +294,258 @@ class RetrievalService:
             for paragraph in paragraphs:
                 snippet = paragraph.replace("\n", " ")
                 chunk_content = f"{title}\n{paragraph}"
-                chunk_id = str(uuid5(NAMESPACE_URL, f"{relative_source}::{title}::{paragraph}"))
+                chunk_hash = self._hash_text(self._normalize_chunk_text(chunk_content))
                 chunks.append(
-                    KnowledgeChunk(
-                        id=chunk_id,
+                    RawKnowledgeChunk(
+                        id=str(uuid5(NAMESPACE_URL, f"chunk::{chunk_hash}")),
                         title=title,
                         source=relative_source,
                         snippet=snippet[:180],
                         content=chunk_content,
                         search_text=self._to_search_text(chunk_content),
-                        embedding=[],
+                        chunk_hash=chunk_hash,
+                        source_hash=source_hash,
                     )
                 )
 
-        if chunks:
-            embeddings = self.embedding_service.embed_many([chunk.content for chunk in chunks])
-            for chunk, embedding in zip(chunks, embeddings):
-                chunk.embedding = embedding
+        return chunks
+
+    def _deduplicate_chunks(self, chunks: list[RawKnowledgeChunk]) -> list[RawKnowledgeChunk]:
+        deduplicated: dict[str, RawKnowledgeChunk] = {}
+
+        for chunk in sorted(chunks, key=lambda item: (item.id, item.source, item.title)):
+            existing = deduplicated.get(chunk.id)
+            if existing is None or (chunk.source, chunk.title) < (existing.source, existing.title):
+                deduplicated[chunk.id] = chunk
+
+        return list(deduplicated.values())
+
+    def _chunks_from_state(
+        self, source: str, source_hash: str, cached: object
+    ) -> list[RawKnowledgeChunk] | None:
+        if not isinstance(cached, dict):
+            return None
+        if cached.get("source_hash") != source_hash:
+            return None
+
+        items = cached.get("chunks")
+        if not isinstance(items, list):
+            return None
+
+        chunks: list[RawKnowledgeChunk] = []
+        for item in items:
+            if not isinstance(item, dict):
+                return None
+
+            try:
+                chunks.append(
+                    RawKnowledgeChunk(
+                        id=str(item["id"]),
+                        title=str(item["title"]),
+                        source=source,
+                        snippet=str(item["snippet"]),
+                        content=str(item["content"]),
+                        search_text=str(item["search_text"]),
+                        chunk_hash=str(item["chunk_hash"]),
+                        source_hash=source_hash,
+                    )
+                )
+            except KeyError:
+                return None
 
         return chunks
+
+    def _chunk_to_state(self, chunk: RawKnowledgeChunk) -> dict[str, str]:
+        return {
+            "id": chunk.id,
+            "title": chunk.title,
+            "snippet": chunk.snippet,
+            "content": chunk.content,
+            "search_text": chunk.search_text,
+            "chunk_hash": chunk.chunk_hash,
+        }
+
+    def _load_index_state(self) -> dict[str, object]:
+        state_path = self.settings.knowledge_index_state_path
+        if not state_path.exists():
+            return {"version": INDEX_STATE_VERSION, "sources": {}}
+
+        try:
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {"version": INDEX_STATE_VERSION, "sources": {}}
+
+        if not isinstance(payload, dict):
+            return {"version": INDEX_STATE_VERSION, "sources": {}}
+        if payload.get("version") != INDEX_STATE_VERSION:
+            return {"version": INDEX_STATE_VERSION, "sources": {}}
+
+        sources = payload.get("sources")
+        if not isinstance(sources, dict):
+            return {"version": INDEX_STATE_VERSION, "sources": {}}
+
+        return payload
+
+    def _save_index_state(self, state: dict[str, object] | None) -> None:
+        if state is None:
+            return
+
+        state_path = self.settings.knowledge_index_state_path
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _bootstrap_database(self) -> None:
         with connect(self.settings.postgres_dsn, autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute(BOOTSTRAP_SQL)
 
-    def _sync_chunks_to_database(self, chunks: list[KnowledgeChunk]) -> None:
-        with connect(self.settings.postgres_dsn, autocommit=True) as conn:
+    def _load_database_chunks(self) -> dict[str, DatabaseChunk]:
+        with connect(self.settings.postgres_dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM knowledge_chunks WHERE session_id IS NULL")
-                if not chunks:
-                    return
-
-                rows = [
-                    (
-                        chunk.id,
-                        chunk.source,
-                        chunk.title,
-                        chunk.snippet,
-                        chunk.search_text,
-                        chunk.content,
-                        self._vector_literal(chunk.embedding),
-                        Json({"source": chunk.source}),
-                    )
-                    for chunk in chunks
-                ]
-                cur.executemany(
+                cur.execute(
                     """
-                    INSERT INTO knowledge_chunks (
-                      id,
-                      session_id,
+                    SELECT
+                      id::text,
                       source_path,
                       title,
                       snippet,
                       search_text,
                       content,
-                      embedding,
+                      embedding::text,
                       metadata
-                    )
-                    VALUES (%s, NULL, %s, %s, %s, %s, %s, %s::vector, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                      source_path = EXCLUDED.source_path,
-                      title = EXCLUDED.title,
-                      snippet = EXCLUDED.snippet,
-                      search_text = EXCLUDED.search_text,
-                      content = EXCLUDED.content,
-                      embedding = EXCLUDED.embedding,
-                      metadata = EXCLUDED.metadata
-                    """,
-                    rows,
+                    FROM knowledge_chunks
+                    WHERE session_id IS NULL
+                    """
                 )
+                rows = cur.fetchall()
+
+        chunks: dict[str, DatabaseChunk] = {}
+        for row in rows:
+            metadata = row[7] if isinstance(row[7], dict) else {}
+            chunks[str(row[0])] = DatabaseChunk(
+                id=str(row[0]),
+                source=str(row[1]),
+                title=str(row[2]),
+                snippet=str(row[3]),
+                search_text=str(row[4]),
+                content=str(row[5]),
+                embedding=self._parse_vector_literal(str(row[6])),
+                metadata=metadata,
+            )
+
+        return chunks
+
+    def _materialize_chunks(
+        self,
+        raw_chunks: list[RawKnowledgeChunk],
+        existing_chunks: dict[str, DatabaseChunk],
+    ) -> list[KnowledgeChunk]:
+        new_chunks = [
+            chunk
+            for chunk in raw_chunks
+            if chunk.id not in existing_chunks or not existing_chunks[chunk.id].embedding
+        ]
+        new_embeddings = self.embedding_service.embed_many([chunk.content for chunk in new_chunks])
+        embedding_by_id = {
+            chunk.id: embedding for chunk, embedding in zip(new_chunks, new_embeddings)
+        }
+
+        return [
+            KnowledgeChunk(
+                id=chunk.id,
+                title=chunk.title,
+                source=chunk.source,
+                snippet=chunk.snippet,
+                content=chunk.content,
+                search_text=chunk.search_text,
+                embedding=(
+                    existing_chunks[chunk.id].embedding
+                    if chunk.id in existing_chunks and existing_chunks[chunk.id].embedding
+                    else embedding_by_id[chunk.id]
+                ),
+                chunk_hash=chunk.chunk_hash,
+                source_hash=chunk.source_hash,
+            )
+            for chunk in raw_chunks
+        ]
+    def _sync_chunks_to_database(
+        self,
+        chunks: list[KnowledgeChunk],
+        existing_chunks: dict[str, DatabaseChunk],
+    ) -> int:
+        current_ids = {chunk.id for chunk in chunks}
+        removed_ids = sorted(existing_id for existing_id in existing_chunks if existing_id not in current_ids)
+        upsert_rows = []
+
+        for chunk in chunks:
+            existing = existing_chunks.get(chunk.id)
+            if existing is not None and self._database_chunk_matches(existing, chunk):
+                continue
+
+            upsert_rows.append(
+                (
+                    chunk.id,
+                    chunk.source,
+                    chunk.title,
+                    chunk.snippet,
+                    chunk.search_text,
+                    chunk.content,
+                    self._vector_literal(chunk.embedding),
+                    Json(
+                        {
+                            "source": chunk.source,
+                            "source_hash": chunk.source_hash,
+                            "chunk_hash": chunk.chunk_hash,
+                        }
+                    ),
+                )
+            )
+
+        with connect(self.settings.postgres_dsn, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                if removed_ids:
+                    cur.executemany(
+                        "DELETE FROM knowledge_chunks WHERE session_id IS NULL AND id = %s::uuid",
+                        [(chunk_id,) for chunk_id in removed_ids],
+                    )
+
+                if upsert_rows:
+                    cur.executemany(
+                        """
+                        INSERT INTO knowledge_chunks (
+                          id,
+                          session_id,
+                          source_path,
+                          title,
+                          snippet,
+                          search_text,
+                          content,
+                          embedding,
+                          metadata
+                        )
+                        VALUES (%s, NULL, %s, %s, %s, %s, %s, %s::vector, %s)
+                        ON CONFLICT (id) DO UPDATE SET
+                          source_path = EXCLUDED.source_path,
+                          title = EXCLUDED.title,
+                          snippet = EXCLUDED.snippet,
+                          search_text = EXCLUDED.search_text,
+                          content = EXCLUDED.content,
+                          embedding = EXCLUDED.embedding,
+                          metadata = EXCLUDED.metadata
+                        """,
+                        upsert_rows,
+                    )
+
+        return len(removed_ids)
+
+    def _database_chunk_matches(self, existing: DatabaseChunk, current: KnowledgeChunk) -> bool:
+        return (
+            existing.source == current.source
+            and existing.title == current.title
+            and existing.snippet == current.snippet
+            and existing.search_text == current.search_text
+            and existing.content == current.content
+        )
 
     def _count_database_chunks(self) -> int:
         with connect(self.settings.postgres_dsn) as conn:
@@ -313,7 +630,6 @@ class RetrievalService:
 
         results.sort(key=lambda item: item.score, reverse=True)
         return results[: self.settings.retrieval_candidate_k]
-
     def _passes_threshold(self, source: RetrievalSource) -> bool:
         return (
             source.lexical_score >= self.settings.retrieval_min_lexical_score
@@ -355,8 +671,24 @@ class RetrievalService:
     def _embed(self, text: str) -> list[float]:
         return self.embedding_service.embed(text)
 
+    def _hash_text(self, text: str) -> str:
+        return sha256(text.encode("utf-8")).hexdigest()
+
+    def _normalize_chunk_text(self, text: str) -> str:
+        return " ".join(text.lower().split())
+
     def _vector_literal(self, values: list[float]) -> str:
         return "[" + ",".join(f"{value:.8f}" for value in values) + "]"
+
+    def _parse_vector_literal(self, value: str) -> list[float]:
+        normalized = value.strip()
+        if not normalized or normalized == "[]":
+            return []
+        if normalized.startswith("[") and normalized.endswith("]"):
+            normalized = normalized[1:-1]
+        if not normalized:
+            return []
+        return [float(item) for item in normalized.split(",")]
 
     def _cosine(self, left: list[float], right: list[float]) -> float:
         return sum(l * r for l, r in zip(left, right))

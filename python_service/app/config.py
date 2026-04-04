@@ -48,6 +48,10 @@ class Settings(BaseSettings):
         return (Path(__file__).resolve().parent / self.knowledge_dir).resolve()
 
     @property
+    def knowledge_index_state_path(self) -> Path:
+        return self.knowledge_path / ".synapse-index-state.json"
+
+    @property
     def summary_model(self) -> str:
         return self.llm_summary_model or self.llm_model
 

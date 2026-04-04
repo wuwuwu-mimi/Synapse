@@ -55,6 +55,12 @@ class KnowledgeStatusResponse(BaseModel):
     embedding_model: str | None = None
     llm_enabled: bool = False
     active_model: str | None = None
+    indexed_sources: int = 0
+    deduplicated_chunks: int = 0
+    reused_chunks: int = 0
+    new_chunks: int = 0
+    removed_chunks: int = 0
+    indexing_mode: str = "incremental"
 
 
 class KnowledgeImportResponse(KnowledgeStatusResponse):

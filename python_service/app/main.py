@@ -54,6 +54,12 @@ def build_knowledge_status() -> KnowledgeStatusResponse:
         embedding_model=retrieval_service.embedding_model,
         llm_enabled=llm_service.enabled,
         active_model=llm_service.active_model,
+        indexed_sources=retrieval_service.indexed_sources,
+        deduplicated_chunks=retrieval_service.deduplicated_chunks,
+        reused_chunks=retrieval_service.reused_chunks,
+        new_chunks=retrieval_service.new_chunks,
+        removed_chunks=retrieval_service.removed_chunks,
+        indexing_mode=retrieval_service.indexing_mode,
     )
 
 
@@ -78,6 +84,12 @@ async def health() -> dict:
         'embedding_model': status.embedding_model,
         'llm_enabled': status.llm_enabled,
         'active_model': status.active_model,
+        'indexed_sources': status.indexed_sources,
+        'deduplicated_chunks': status.deduplicated_chunks,
+        'reused_chunks': status.reused_chunks,
+        'new_chunks': status.new_chunks,
+        'removed_chunks': status.removed_chunks,
+        'indexing_mode': status.indexing_mode,
     }
 
 

@@ -84,6 +84,8 @@ export default function App(): JSX.Element {
   const generationLabel =
     currentSession?.inspector.generationMode === 'llm' ? copy.llm : copy.fallback;
   const llmStatusLabel = knowledge?.llmEnabled ? copy.enabled : copy.disabled;
+  const indexingModeLabel =
+    knowledge?.indexingMode === 'incremental' ? copy.incremental : knowledge?.indexingMode ?? copy.none;
 
   return (
     <div className="app-shell">
@@ -159,6 +161,26 @@ export default function App(): JSX.Element {
               <strong>{knowledge?.documents ?? 0}</strong>
             </div>
             <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.indexedSources}</span>
+              <strong>{knowledge?.indexedSources ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.deduplicated}</span>
+              <strong>{knowledge?.deduplicatedChunks ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.reused}</span>
+              <strong>{knowledge?.reusedChunks ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.added}</span>
+              <strong>{knowledge?.newChunks ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.removed}</span>
+              <strong>{knowledge?.removedChunks ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
               <span className="knowledge-stat-label">{copy.lastIndexed}</span>
               <strong>{lastIndexed}</strong>
             </div>
@@ -177,6 +199,10 @@ export default function App(): JSX.Element {
             <div className="knowledge-stat">
               <span className="knowledge-stat-label">{copy.model}</span>
               <strong>{knowledge?.activeModel ?? copy.fallback}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.indexingMode}</span>
+              <strong>{indexingModeLabel}</strong>
             </div>
           </div>
 

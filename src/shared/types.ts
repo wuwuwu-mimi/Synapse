@@ -64,6 +64,12 @@ export interface KnowledgeStatus {
   lastIndexedAt?: string | null;
   llmEnabled: boolean;
   activeModel?: string | null;
+  indexedSources?: number;
+  deduplicatedChunks?: number;
+  reusedChunks?: number;
+  newChunks?: number;
+  removedChunks?: number;
+  indexingMode?: string | null;
 }
 
 export interface KnowledgeImportRequest {

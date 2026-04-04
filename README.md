@@ -1,6 +1,6 @@
 ﻿# Synapse
 
-`Synapse` 是一个桌面端 RAG 原型项目，基于 Electron + React + FastAPI 构建，当前已经具备知识导入、真实 pgvector 检索、本地 Ollama embedding、Redis 记忆持久化、上下文检查器和双语界面等核心能力。
+`Synapse` 是一个桌面端 RAG 原型项目，基于 Electron + React + FastAPI 构建，当前已经具备知识导入、真实 pgvector 检索、本地 Ollama embedding、Redis 记忆持久化、上下文检查器、知识去重 / 增量索引和双语界面等核心能力。
 
 ## 当前能力
 
@@ -12,6 +12,7 @@
 - 记忆：摘要与事实已接入 Redis 持久化
 - 知识库：支持导入 `.md` / `.txt` 文件与文件夹，并重建索引
 - 知识库：支持导入历史查看与已导入批次删除
+- 知识库：支持按内容去重，并基于本地状态文件做增量索引
 - 调试：UI 可显示数据库、Redis、embedding、LLM 等运行状态
 
 ## 当前目录
@@ -83,6 +84,8 @@ npm run dev
 - `POSTGRES_DSN`：PostgreSQL / pgvector 连接串
 - `REDIS_URL`：Redis 连接串
 - `KNOWLEDGE_DIR`：知识目录
+
+说明：增量索引会在知识目录下生成 `.synapse-index-state.json`，该文件仅用于本地缓存索引状态，默认不会提交到 Git。
 
 ### Embedding
 
@@ -171,6 +174,7 @@ LLM_TEMPERATURE=0.2
 - pgvector 连接验证
 - Redis 持久化验证
 - Ollama embedding 验证
+- 知识去重与增量索引验证
 - Electron 开发模式启动验证
 - SSE 流式聊天验证
 
@@ -187,15 +191,14 @@ LLM_TEMPERATURE=0.2
 
 - 上游 LLM 当前仍是非原生流式透传
 - 完整会话消息仍保存在本地文件，而不是统一存入 Redis
-- 知识库管理仍缺少去重与增量重建能力
 - 自动化测试与打包发布流程仍未完善
 
 ## 下一阶段建议
 
-- 增加知识库去重与增量索引
 - 支持真正的上游流式 LLM 返回
 - 增加自动化回归测试
 - 增加桌面端打包与发布流程
+- 为知识库批次增加更细粒度的冲突提示与差异预览
 
 ## 相关文档
 

@@ -44,6 +44,12 @@ export interface AppMessages {
   reindex: string;
   importing: string;
   documents: string;
+  indexedSources: string;
+  deduplicated: string;
+  reused: string;
+  added: string;
+  removed: string;
+  indexingMode: string;
   lastIndexed: string;
   database: string;
   redis: string;
@@ -56,6 +62,7 @@ export interface AppMessages {
   disconnected: string;
   enabled: string;
   disabled: string;
+  incremental: string;
   languageChinese: string;
   generation: string;
   noGeneration: string;
@@ -112,6 +119,12 @@ export const messages: Record<AppLocale, AppMessages> = {
     reindex: '重新索引',
     importing: '处理中...',
     documents: '分块数',
+    indexedSources: '文件数',
+    deduplicated: '已去重',
+    reused: '复用分块',
+    added: '新增分块',
+    removed: '删除分块',
+    indexingMode: '索引模式',
     lastIndexed: '上次索引',
     database: '数据库',
     redis: 'Redis',
@@ -124,6 +137,7 @@ export const messages: Record<AppLocale, AppMessages> = {
     disconnected: '未连接',
     enabled: '已启用',
     disabled: '未启用',
+    incremental: '增量',
     languageChinese: '中文',
     generation: '生成方式',
     noGeneration: '暂时还没有生成信息。',
@@ -176,6 +190,12 @@ export const messages: Record<AppLocale, AppMessages> = {
     reindex: 'Reindex',
     importing: 'Working...',
     documents: 'Chunks',
+    indexedSources: 'Sources',
+    deduplicated: 'Deduped',
+    reused: 'Reused',
+    added: 'Added',
+    removed: 'Removed',
+    indexingMode: 'Index Mode',
     lastIndexed: 'Last indexed',
     database: 'Database',
     redis: 'Redis',
@@ -188,6 +208,7 @@ export const messages: Record<AppLocale, AppMessages> = {
     disconnected: 'Disconnected',
     enabled: 'Enabled',
     disabled: 'Disabled',
+    incremental: 'Incremental',
     languageChinese: '中文',
     generation: 'Generation',
     noGeneration: 'No generation metadata yet.',

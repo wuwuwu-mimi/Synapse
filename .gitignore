@@ -10,4 +10,5 @@ __pycache__
 *.pyd
 *.log
 knowledge/imports
+knowledge/.synapse-index-state.json
 .DS_Store

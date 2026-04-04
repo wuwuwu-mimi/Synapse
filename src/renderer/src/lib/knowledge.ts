@@ -16,6 +16,12 @@ function toCamelStatus(payload: {
   last_indexed_at?: string | null;
   llm_enabled: boolean;
   active_model?: string | null;
+  indexed_sources?: number;
+  deduplicated_chunks?: number;
+  reused_chunks?: number;
+  new_chunks?: number;
+  removed_chunks?: number;
+  indexing_mode?: string | null;
 }): KnowledgeStatus {
   return {
     knowledgeDir: payload.knowledge_dir,
@@ -29,6 +35,12 @@ function toCamelStatus(payload: {
     lastIndexedAt: payload.last_indexed_at,
     llmEnabled: payload.llm_enabled,
     activeModel: payload.active_model,
+    indexedSources: payload.indexed_sources,
+    deduplicatedChunks: payload.deduplicated_chunks,
+    reusedChunks: payload.reused_chunks,
+    newChunks: payload.new_chunks,
+    removedChunks: payload.removed_chunks,
+    indexingMode: payload.indexing_mode,
   };
 }
 
@@ -55,6 +67,12 @@ export async function getKnowledgeStatus(backendUrl: string): Promise<KnowledgeS
     last_indexed_at?: string | null;
     llm_enabled: boolean;
     active_model?: string | null;
+    indexed_sources?: number;
+    deduplicated_chunks?: number;
+    reused_chunks?: number;
+    new_chunks?: number;
+    removed_chunks?: number;
+    indexing_mode?: string | null;
   }>(`${backendUrl}/api/knowledge/status`);
 
   return toCamelStatus(payload);
@@ -76,6 +94,12 @@ export async function importKnowledgeIndex(
     last_indexed_at?: string | null;
     llm_enabled: boolean;
     active_model?: string | null;
+    indexed_sources?: number;
+    deduplicated_chunks?: number;
+    reused_chunks?: number;
+    new_chunks?: number;
+    removed_chunks?: number;
+    indexing_mode?: string | null;
   }>(`${backendUrl}/api/knowledge/import`, {
     method: 'POST',
     headers: {
@@ -100,6 +124,12 @@ export async function reindexKnowledge(backendUrl: string): Promise<KnowledgeSta
     last_indexed_at?: string | null;
     llm_enabled: boolean;
     active_model?: string | null;
+    indexed_sources?: number;
+    deduplicated_chunks?: number;
+    reused_chunks?: number;
+    new_chunks?: number;
+    removed_chunks?: number;
+    indexing_mode?: string | null;
   }>(`${backendUrl}/api/knowledge/reindex`, {
     method: 'POST',
   });
