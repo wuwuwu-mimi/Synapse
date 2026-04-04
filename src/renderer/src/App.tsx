@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Input, Modal, Segmented, Select, Spin, Switch, Ta
 import ReactMarkdown from 'react-markdown';
 import type { ChatSession } from '@shared/types';
 import {
+  formatDeleteImportConfirm,
   formatDeleteSessionConfirm,
   formatNoSourceReason,
   messages,
@@ -101,6 +102,19 @@ export default function App(): JSX.Element {
       okButtonProps: { danger: true },
       onOk: async () => {
         await deleteSession(session.id);
+      },
+    });
+  };
+
+  const handleDeleteImport = (entry: (typeof knowledgeImports)[number]): void => {
+    Modal.confirm({
+      title: copy.deleteImportConfirmTitle,
+      content: formatDeleteImportConfirm(locale, entry.label),
+      okText: copy.confirm,
+      cancelText: copy.cancel,
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await deleteKnowledgeImport(entry.rootPath);
       },
     });
   };
@@ -305,7 +319,7 @@ export default function App(): JSX.Element {
                           size="small"
                           danger
                           disabled={knowledgeBusy}
-                          onClick={() => void deleteKnowledgeImport(entry.rootPath)}
+                          onClick={() => handleDeleteImport(entry)}
                         >
                           {copy.deleteImport}
                         </Button>
@@ -369,6 +383,30 @@ export default function App(): JSX.Element {
         </div>
 
         {error ? <Alert banner type="warning" message={error} /> : null}
+
+        {knowledgeOnlyMode || selectedKnowledgeScope ? (
+          <div className="chat-context-bar">
+            <div className="chat-context-tags">
+              {knowledgeOnlyMode ? <Tag color="gold">{copy.knowledgeOnlyActive}</Tag> : null}
+              {selectedKnowledgeScope ? <Tag color="geekblue">{copy.activeScope}</Tag> : null}
+            </div>
+            {selectedKnowledgeScope ? (
+              <div className="chat-context-summary">
+                <strong>
+                  {copy.currentScope}: {selectedKnowledgeScope.label}
+                </strong>
+                <span>
+                  {copy.scopeSourceNames}: {selectedKnowledgeScope.sourceNames.join(', ')}
+                </span>
+              </div>
+            ) : null}
+            {selectedKnowledgeScope ? (
+              <Button size="small" type="text" onClick={() => setKnowledgeScopeId(undefined)}>
+                {copy.clearScope}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="message-list">
           {!currentSession ? (

@@ -59,9 +59,13 @@ export interface AppMessages {
   importFolder: string;
   importedHistory: string;
   deleteImport: string;
+  deleteImportConfirmTitle: string;
   useAsScope: string;
   clearScope: string;
   activeScope: string;
+  currentScope: string;
+  scopeSourceNames: string;
+  knowledgeOnlyActive: string;
   noImports: string;
   filesUnit: string;
   showDetails: string;
@@ -161,9 +165,13 @@ export const messages: Record<AppLocale, AppMessages> = {
     importFolder: '导入文件夹',
     importedHistory: '导入历史',
     deleteImport: '删除',
+    deleteImportConfirmTitle: '确认删除导入批次',
     useAsScope: '设为范围',
     clearScope: '清除范围',
     activeScope: '当前范围',
+    currentScope: '当前知识范围',
+    scopeSourceNames: '包含文件',
+    knowledgeOnlyActive: '仅知识库回答已开启',
     noImports: '暂时还没有导入记录。',
     filesUnit: '个文件',
     showDetails: '展开详情',
@@ -259,9 +267,13 @@ export const messages: Record<AppLocale, AppMessages> = {
     importFolder: 'Import Folder',
     importedHistory: 'Import History',
     deleteImport: 'Delete',
+    deleteImportConfirmTitle: 'Delete this import batch?',
     useAsScope: 'Use as scope',
     clearScope: 'Clear scope',
     activeScope: 'Active scope',
+    currentScope: 'Current knowledge scope',
+    scopeSourceNames: 'Included sources',
+    knowledgeOnlyActive: 'Knowledge-only mode is on',
     noImports: 'No imported batches yet.',
     filesUnit: 'files',
     showDetails: 'Show details',
@@ -354,4 +366,10 @@ export function formatDeleteSessionConfirm(locale: AppLocale, title: string): st
   return locale === 'zh-CN'
     ? `删除后将无法恢复「${title}」中的消息记录。`
     : `This permanently removes the messages in "${title}".`;
+}
+
+export function formatDeleteImportConfirm(locale: AppLocale, label: string): string {
+  return locale === 'zh-CN'
+    ? `删除后将移除批次「${label}」及其对应索引。`
+    : `This removes the batch "${label}" and its indexed content.`;
 }

@@ -279,8 +279,21 @@ textarea {
   gap: 8px;
 }
 
+.session-card-actions span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .session-delete-button {
   padding-inline: 4px !important;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.session-card:hover .session-delete-button,
+.session-card.active .session-delete-button,
+.session-delete-button:focus-visible {
+  opacity: 1;
 }
 
 .session-card p,
@@ -293,6 +306,44 @@ textarea {
 
 .chat-panel {
   overflow: hidden;
+}
+
+.chat-context-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 22px 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(129, 81, 43, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 251, 247, 0.88);
+}
+
+.chat-context-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-context-summary {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chat-context-summary strong,
+.chat-context-summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-context-summary span {
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .message-list {
@@ -474,6 +525,11 @@ textarea {
 
   .knowledge-meta-grid {
     grid-template-columns: 1fr;
+  }
+
+  .chat-context-bar {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .message-bubble {
