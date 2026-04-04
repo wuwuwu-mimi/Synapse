@@ -118,7 +118,7 @@ async def knowledge_import(request: KnowledgeImportRequest) -> KnowledgeImportRe
 @app.post('/api/retrieve', response_model=RetrieveResponse)
 async def retrieve(request: RetrieveRequest) -> RetrieveResponse:
     summary, facts = memory_store.build_context(request.session_id, [])
-    rewritten_query, sources = retrieval_service.retrieve(
+    rewritten_query, sources, debug = retrieval_service.retrieve(
         request.session_id, request.query, facts, request.top_k
     )
     return RetrieveResponse(
@@ -127,6 +127,7 @@ async def retrieve(request: RetrieveRequest) -> RetrieveResponse:
         summary=summary,
         facts=facts,
         sources=sources,
+        debug=debug,
     )
 
 
@@ -135,7 +136,12 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     async def event_stream():
         try:
             async for event_name, payload in chat_engine.stream_reply(
-                request.session_id, request.query, request.history
+                request.session_id,
+                request.query,
+                request.history,
+                request.knowledge_only,
+                request.knowledge_scope_prefix,
+                request.knowledge_scope_label,
             ):
                 yield sse(event_name, payload)
                 if event_name == 'delta':

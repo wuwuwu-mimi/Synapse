@@ -63,6 +63,7 @@ WITH keyword_hits AS (
     ) AS lexical_rank
   FROM knowledge_chunks
   WHERE session_id IS NULL
+    AND (%(source_prefix)s = '' OR source_path LIKE %(source_like)s)
     AND to_tsvector('simple', search_text) @@ websearch_to_tsquery('simple', %(query_search)s)
   ORDER BY lexical_score DESC
   LIMIT %(candidate_k)s
@@ -80,6 +81,7 @@ vector_hits AS (
     ) AS vector_rank
   FROM knowledge_chunks
   WHERE session_id IS NULL
+    AND (%(source_prefix)s = '' OR source_path LIKE %(source_like)s)
   ORDER BY embedding <=> %(embedding)s::vector
   LIMIT %(candidate_k)s
 ),

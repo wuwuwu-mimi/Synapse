@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { dialog, type BrowserWindow, type OpenDialogOptions } from 'electron';
 import type {
@@ -8,6 +8,12 @@ import type {
 } from '@shared/types';
 
 const SUPPORTED_EXTENSIONS = new Set(['.md', '.txt']);
+const IMPORT_MANIFEST_FILE = '.synapse-import.json';
+
+interface ImportManifest {
+  label: string;
+  sourceNames: string[];
+}
 
 function getKnowledgeRoot(): string {
   return path.join(process.cwd(), 'knowledge');
@@ -84,6 +90,52 @@ async function copyIntoKnowledgeRoot(
   return uniqueTarget;
 }
 
+function createImportLabel(sourceNames: string[]): string {
+  if (sourceNames.length === 0) {
+    return 'import';
+  }
+  if (sourceNames.length === 1) {
+    return sourceNames[0];
+  }
+  if (sourceNames.length === 2) {
+    return `${sourceNames[0]}, ${sourceNames[1]}`;
+  }
+  return `${sourceNames[0]} +${sourceNames.length - 1}`;
+}
+
+async function writeImportManifest(batchDir: string, sourceNames: string[]): Promise<void> {
+  await mkdir(batchDir, { recursive: true });
+  const manifest: ImportManifest = {
+    label: createImportLabel(sourceNames),
+    sourceNames,
+  };
+  await writeFile(
+    path.join(batchDir, IMPORT_MANIFEST_FILE),
+    JSON.stringify(manifest, null, 2),
+    'utf8',
+  );
+}
+
+async function readImportManifest(batchDir: string): Promise<ImportManifest | null> {
+  try {
+    const raw = await readFile(path.join(batchDir, IMPORT_MANIFEST_FILE), 'utf8');
+    const parsed = JSON.parse(raw) as Partial<ImportManifest>;
+    return {
+      label:
+        typeof parsed.label === 'string' && parsed.label.trim()
+          ? parsed.label.trim()
+          : path.basename(batchDir),
+      sourceNames: Array.isArray(parsed.sourceNames)
+        ? parsed.sourceNames.filter(
+            (item): item is string => typeof item === 'string' && item.trim().length > 0,
+          )
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function pickKnowledgeFiles(window: BrowserWindow | null): Promise<string[]> {
   const options: OpenDialogOptions = {
     title: 'Select knowledge files',
@@ -121,6 +173,7 @@ export async function importKnowledge(
 
   if (payload.mode === 'files') {
     const batchDir = path.join(batchRoot, createBatchId('files'));
+    const sourceNames: string[] = [];
     for (const sourcePath of payload.paths) {
       if (!isSupportedFile(sourcePath)) {
         skippedPaths.push(sourcePath);
@@ -128,6 +181,7 @@ export async function importKnowledge(
       }
 
       const absoluteSource = path.resolve(sourcePath);
+      sourceNames.push(path.basename(absoluteSource));
       if (absoluteSource.startsWith(knowledgeRoot)) {
         importedPaths.push(absoluteSource);
         continue;
@@ -135,6 +189,10 @@ export async function importKnowledge(
 
       const targetPath = path.join(batchDir, sanitizeSegment(path.basename(sourcePath)));
       importedPaths.push(await copyIntoKnowledgeRoot(absoluteSource, targetPath));
+    }
+
+    if (importedPaths.length > 0) {
+      await writeImportManifest(batchDir, sourceNames);
     }
 
     return {
@@ -158,6 +216,7 @@ export async function importKnowledge(
   const absoluteFolder = path.resolve(sourceFolder);
   const batchDir = path.join(batchRoot, createBatchId(sanitizeSegment(path.basename(sourceFolder))));
   const files = await collectSupportedFiles(absoluteFolder);
+  const sourceNames = [path.basename(absoluteFolder)];
 
   for (const filePath of files) {
     if (filePath.startsWith(knowledgeRoot)) {
@@ -168,6 +227,10 @@ export async function importKnowledge(
     const relativePath = path.relative(absoluteFolder, filePath);
     const targetPath = path.join(batchDir, relativePath);
     importedPaths.push(await copyIntoKnowledgeRoot(filePath, targetPath));
+  }
+
+  if (importedPaths.length > 0) {
+    await writeImportManifest(batchDir, sourceNames);
   }
 
   return {
@@ -185,11 +248,17 @@ function toImportEntry(
   updatedAt: string,
 ): KnowledgeImportEntry {
   const label = path.basename(absolutePath) || `${mode}-import`;
+  const sourcePrefix = path
+    .relative(getKnowledgeRoot(), absolutePath)
+    .split(path.sep)
+    .join('/');
   return {
     id: `${mode}:${absolutePath}`,
     mode,
     label,
     rootPath: absolutePath,
+    sourcePrefix,
+    sourceNames: [label],
     fileCount,
     updatedAt,
   };
@@ -210,7 +279,16 @@ export async function listKnowledgeImports(): Promise<KnowledgeImportEntry[]> {
         const absolutePath = path.join(modeRoot, batch.name);
         const fileCount = await countSupportedFiles(absolutePath);
         const info = await stat(absolutePath);
-        entries.push(toImportEntry(mode, absolutePath, fileCount, info.mtime.toISOString()));
+        const fallbackEntry = toImportEntry(mode, absolutePath, fileCount, info.mtime.toISOString());
+        const manifest = await readImportManifest(absolutePath);
+        const discoveredNames = manifest
+          ? manifest.sourceNames
+          : (await collectSupportedFiles(absolutePath)).map((filePath) => path.basename(filePath));
+        entries.push({
+          ...fallbackEntry,
+          label: manifest?.label ?? createImportLabel(discoveredNames) ?? fallbackEntry.label,
+          sourceNames: discoveredNames.length ? discoveredNames : fallbackEntry.sourceNames,
+        });
       }
     } catch {
       continue;

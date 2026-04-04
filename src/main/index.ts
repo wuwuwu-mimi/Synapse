@@ -111,6 +111,13 @@ function registerIpcHandlers(): void {
     return session;
   });
 
+  ipcMain.handle('app:delete-session', async (_event, sessionId: string) => {
+    const sessions = await readSessions();
+    const nextSessions = sessions.filter((item) => item.id !== sessionId);
+    await writeSessions(nextSessions);
+    return nextSessions.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  });
+
   ipcMain.handle('app:get-runtime-config', async () => runtimeConfig);
   ipcMain.handle('knowledge:pick-files', async () => pickKnowledgeFiles(mainWindow));
   ipcMain.handle('knowledge:pick-folder', async () => pickKnowledgeFolder(mainWindow));

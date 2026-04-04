@@ -14,6 +14,7 @@ declare global {
       listSessions: () => Promise<ChatSession[]>;
       createSession: (title?: string) => Promise<ChatSession>;
       upsertSession: (session: ChatSession) => Promise<ChatSession>;
+      deleteSession: (sessionId: string) => Promise<ChatSession[]>;
       getRuntimeConfig: () => Promise<RuntimeConfig>;
       pickKnowledgeFiles: () => Promise<string[]>;
       pickKnowledgeFolder: () => Promise<string | null>;

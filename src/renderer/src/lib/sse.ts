@@ -1,6 +1,9 @@
 export interface StreamChatPayload {
   session_id: string;
   query: string;
+  knowledge_only?: boolean;
+  knowledge_scope_prefix?: string;
+  knowledge_scope_label?: string;
   history: Array<{
     role: 'user' | 'assistant';
     content: string;
@@ -12,6 +15,21 @@ export interface StreamChatFinalEvent {
   rewritten_query?: string;
   generation_mode?: 'llm' | 'fallback';
   model?: string | null;
+  knowledge_scope_label?: string | null;
+  debug?: {
+    knowledge_strategy: string;
+    knowledge_scope_prefix?: string | null;
+    knowledge_candidates: number;
+    knowledge_kept: number;
+    knowledge_filtered_by_scope: number;
+    knowledge_filtered_by_threshold: number;
+    memory_candidates: number;
+    memory_kept: number;
+    memory_filtered_by_threshold: number;
+    merged_candidates: number;
+    final_sources: number;
+    no_source_reason?: string | null;
+  };
   facts: Array<{
     id: string;
     content: string;

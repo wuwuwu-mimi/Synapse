@@ -13,7 +13,7 @@ from psycopg import connect
 from psycopg.types.json import Json
 
 from app.config import Settings
-from app.schemas import MemoryFact, RetrievalSource
+from app.schemas import MemoryFact, RetrievalDebug, RetrievalSource
 from app.services.embedding_service import EmbeddingService
 from app.services.postgres_sql import BOOTSTRAP_SQL, HYBRID_SEARCH_SQL
 
@@ -66,6 +66,14 @@ class IndexStats:
     new_chunks: int = 0
     removed_chunks: int = 0
     indexing_mode: str = "incremental"
+
+
+@dataclass
+class RetrievalMetrics:
+    strategy: str
+    candidates_before_threshold: int
+    candidates_after_threshold: int
+    filtered_by_scope: int = 0
 
 
 class RetrievalService:
@@ -196,12 +204,16 @@ class RetrievalService:
         query: str,
         facts: list[MemoryFact],
         top_k: int | None = None,
-    ) -> tuple[str, list[RetrievalSource]]:
+        knowledge_scope_prefix: str | None = None,
+    ) -> tuple[str, list[RetrievalSource], RetrievalDebug]:
         limit = top_k or self.settings.default_top_k
         rewritten_query = self.rewrite_query(query)
 
-        knowledge_results = self._retrieve_knowledge(rewritten_query)
-        memory_results = self._score_memory_facts(session_id, rewritten_query, facts)
+        knowledge_results, knowledge_metrics = self._retrieve_knowledge(
+            rewritten_query,
+            knowledge_scope_prefix,
+        )
+        memory_results, memory_metrics = self._score_memory_facts(session_id, rewritten_query, facts)
 
         merged: dict[str, RetrievalSource] = {}
         for result in [*knowledge_results, *memory_results]:
@@ -210,17 +222,45 @@ class RetrievalService:
                 merged[result.id] = result
 
         ordered = sorted(merged.values(), key=lambda item: item.score, reverse=True)
-        return rewritten_query, ordered[:limit]
+        final_sources = ordered[:limit]
+        debug = RetrievalDebug(
+            knowledge_strategy=knowledge_metrics.strategy,
+            knowledge_scope_prefix=(knowledge_scope_prefix or None),
+            knowledge_candidates=knowledge_metrics.candidates_before_threshold,
+            knowledge_kept=knowledge_metrics.candidates_after_threshold,
+            knowledge_filtered_by_scope=knowledge_metrics.filtered_by_scope,
+            knowledge_filtered_by_threshold=(
+                knowledge_metrics.candidates_before_threshold - knowledge_metrics.candidates_after_threshold
+            ),
+            memory_candidates=memory_metrics.candidates_before_threshold,
+            memory_kept=memory_metrics.candidates_after_threshold,
+            memory_filtered_by_threshold=(
+                memory_metrics.candidates_before_threshold - memory_metrics.candidates_after_threshold
+            ),
+            merged_candidates=len(ordered),
+            final_sources=len(final_sources),
+            no_source_reason=self._resolve_no_source_reason(
+                final_sources,
+                knowledge_metrics,
+                memory_metrics,
+                bool(knowledge_scope_prefix),
+            ),
+        )
+        return rewritten_query, final_sources, debug
 
-    def _retrieve_knowledge(self, query: str) -> list[RetrievalSource]:
+    def _retrieve_knowledge(
+        self,
+        query: str,
+        source_prefix: str | None = None,
+    ) -> tuple[list[RetrievalSource], RetrievalMetrics]:
         if self._database_connected:
             try:
-                return self._retrieve_from_database(query)
+                return self._retrieve_from_database(query, source_prefix)
             except Exception as exc:
                 self._database_connected = False
                 self._database_error = str(exc)
 
-        return self._retrieve_from_memory(query)
+        return self._retrieve_from_memory(query, source_prefix)
     def _collect_raw_chunks(
         self, previous_state: dict[str, object]
     ) -> tuple[list[RawKnowledgeChunk], dict[str, object], IndexStats]:
@@ -554,11 +594,18 @@ class RetrievalService:
                 row = cur.fetchone()
         return int(row[0]) if row else 0
 
-    def _retrieve_from_database(self, query: str) -> list[RetrievalSource]:
+    def _retrieve_from_database(
+        self,
+        query: str,
+        source_prefix: str | None = None,
+    ) -> tuple[list[RetrievalSource], RetrievalMetrics]:
+        normalized_prefix = (source_prefix or "").strip().strip("/")
         params = {
             "query_search": self._query_search_terms(query),
             "embedding": self._vector_literal(self._embed(query)),
             "candidate_k": max(self.settings.retrieval_candidate_k, self.settings.default_top_k),
+            "source_prefix": normalized_prefix,
+            "source_like": f"{normalized_prefix}%" if normalized_prefix else "",
         }
 
         with connect(self.settings.postgres_dsn) as conn:
@@ -579,14 +626,32 @@ class RetrievalService:
             )
             for row in rows
         ]
-        return [item for item in results if self._passes_threshold(item)]
+        filtered = [item for item in results if self._passes_threshold(item)]
+        scope_filtered = self._count_scope_filtered_chunks(normalized_prefix)
+        return filtered, RetrievalMetrics(
+            strategy="db+hybrid",
+            candidates_before_threshold=len(results),
+            candidates_after_threshold=len(filtered),
+            filtered_by_scope=scope_filtered,
+        )
 
-    def _retrieve_from_memory(self, query: str) -> list[RetrievalSource]:
+    def _retrieve_from_memory(
+        self,
+        query: str,
+        source_prefix: str | None = None,
+    ) -> tuple[list[RetrievalSource], RetrievalMetrics]:
         query_tokens = self._tokenize(query)
         query_embedding = self._embed(query)
         results: list[RetrievalSource] = []
+        normalized_prefix = (source_prefix or "").strip().strip("/")
+        scoped_out = 0
+        candidates_before_threshold = 0
 
         for chunk in self._chunks:
+            if normalized_prefix and not chunk.source.startswith(normalized_prefix):
+                scoped_out += 1
+                continue
+            candidates_before_threshold += 1
             lexical_score = self._lexical_score(query_tokens, self._tokenize(chunk.content))
             vector_score = self._cosine(query_embedding, chunk.embedding)
             candidate = RetrievalSource(
@@ -603,16 +668,24 @@ class RetrievalService:
                 results.append(candidate)
 
         results.sort(key=lambda item: item.score, reverse=True)
-        return results[: self.settings.retrieval_candidate_k]
+        kept = results[: self.settings.retrieval_candidate_k]
+        return kept, RetrievalMetrics(
+            strategy="memory-fallback",
+            candidates_before_threshold=candidates_before_threshold,
+            candidates_after_threshold=len(kept),
+            filtered_by_scope=scoped_out,
+        )
 
     def _score_memory_facts(
         self, session_id: str, query: str, facts: list[MemoryFact]
-    ) -> list[RetrievalSource]:
+    ) -> tuple[list[RetrievalSource], RetrievalMetrics]:
         query_tokens = self._tokenize(query)
         query_embedding = self._embed(query)
         results: list[RetrievalSource] = []
+        candidates_before_threshold = 0
 
         for fact in facts:
+            candidates_before_threshold += 1
             lexical_score = self._lexical_score(query_tokens, self._tokenize(fact.content))
             vector_score = self._cosine(query_embedding, self._embed(fact.content))
             candidate = RetrievalSource(
@@ -629,13 +702,44 @@ class RetrievalService:
                 results.append(candidate)
 
         results.sort(key=lambda item: item.score, reverse=True)
-        return results[: self.settings.retrieval_candidate_k]
+        kept = results[: self.settings.retrieval_candidate_k]
+        return kept, RetrievalMetrics(
+            strategy="memory+hybrid",
+            candidates_before_threshold=candidates_before_threshold,
+            candidates_after_threshold=len(kept),
+        )
     def _passes_threshold(self, source: RetrievalSource) -> bool:
         return (
             source.lexical_score >= self.settings.retrieval_min_lexical_score
             or source.score >= self.settings.retrieval_min_fused_score
             or source.vector_score >= self.settings.retrieval_min_vector_score
         )
+
+    def _count_scope_filtered_chunks(self, normalized_prefix: str) -> int:
+        if not normalized_prefix:
+            return 0
+        return sum(1 for chunk in self._chunks if not chunk.source.startswith(normalized_prefix))
+
+    def _resolve_no_source_reason(
+        self,
+        final_sources: list[RetrievalSource],
+        knowledge_metrics: RetrievalMetrics,
+        memory_metrics: RetrievalMetrics,
+        scoped: bool,
+    ) -> str | None:
+        if final_sources:
+            return None
+        if scoped and knowledge_metrics.filtered_by_scope > 0 and knowledge_metrics.candidates_before_threshold == 0:
+            return "scope_filtered_all"
+        if (
+            knowledge_metrics.candidates_before_threshold > 0
+            and knowledge_metrics.candidates_after_threshold == 0
+            and memory_metrics.candidates_after_threshold == 0
+        ):
+            return "threshold_filtered"
+        if memory_metrics.candidates_before_threshold > 0 and memory_metrics.candidates_after_threshold == 0:
+            return "memory_filtered"
+        return "no_match"
 
     def _query_search_terms(self, query: str) -> str:
         terms = sorted(self._tokenize(query))

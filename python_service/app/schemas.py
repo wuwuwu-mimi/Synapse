@@ -25,6 +25,21 @@ class RetrievalSource(BaseModel):
     strategy: str
 
 
+class RetrievalDebug(BaseModel):
+    knowledge_strategy: str = "db+hybrid"
+    knowledge_scope_prefix: str | None = None
+    knowledge_candidates: int = 0
+    knowledge_kept: int = 0
+    knowledge_filtered_by_scope: int = 0
+    knowledge_filtered_by_threshold: int = 0
+    memory_candidates: int = 0
+    memory_kept: int = 0
+    memory_filtered_by_threshold: int = 0
+    merged_candidates: int = 0
+    final_sources: int = 0
+    no_source_reason: str | None = None
+
+
 class RetrieveRequest(BaseModel):
     session_id: str
     query: str
@@ -37,6 +52,7 @@ class RetrieveResponse(BaseModel):
     summary: str
     facts: list[MemoryFact] = Field(default_factory=list)
     sources: list[RetrievalSource] = Field(default_factory=list)
+    debug: RetrievalDebug = Field(default_factory=RetrievalDebug)
 
 
 class KnowledgeImportRequest(BaseModel):
@@ -72,6 +88,9 @@ class ChatRequest(BaseModel):
     session_id: str
     query: str
     history: list[ChatMessage] = Field(default_factory=list)
+    knowledge_only: bool = False
+    knowledge_scope_prefix: str | None = None
+    knowledge_scope_label: str | None = None
 
 
 class ChatFinalEvent(BaseModel):
@@ -79,5 +98,7 @@ class ChatFinalEvent(BaseModel):
     rewritten_query: str
     facts: list[MemoryFact] = Field(default_factory=list)
     sources: list[RetrievalSource] = Field(default_factory=list)
+    debug: RetrievalDebug = Field(default_factory=RetrievalDebug)
     generation_mode: str = "fallback"
     model: str | None = None
+    knowledge_scope_label: str | None = None

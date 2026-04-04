@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Empty, Input, Segmented, Spin, Tag } from 'antd';
+import { Alert, Button, Empty, Input, Modal, Segmented, Select, Spin, Switch, Tag } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import type { ChatSession } from '@shared/types';
 import {
+  formatDeleteSessionConfirm,
+  formatNoSourceReason,
   messages,
   resolveInitialLocale,
   type AppLocale,
@@ -20,11 +22,16 @@ function getSessionPreview(session: ChatSession, fallback: string): string {
 export default function App(): JSX.Element {
   const [draft, setDraft] = useState('');
   const [locale, setLocale] = useState<AppLocale>(resolveInitialLocale);
+  const [showRuntimeDetails, setShowRuntimeDetails] = useState(false);
+  const [showKnowledgeDetails, setShowKnowledgeDetails] = useState(false);
+  const [showImportHistory, setShowImportHistory] = useState(false);
   const sessions = useChatStore((state) => state.sessions);
   const activeSessionId = useChatStore((state) => state.activeSessionId);
   const runtime = useChatStore((state) => state.runtime);
   const knowledge = useChatStore((state) => state.knowledge);
   const knowledgeImports = useChatStore((state) => state.knowledgeImports);
+  const knowledgeOnlyMode = useChatStore((state) => state.knowledgeOnlyMode);
+  const knowledgeScopeId = useChatStore((state) => state.knowledgeScopeId);
   const sending = useChatStore((state) => state.sending);
   const knowledgeBusy = useChatStore((state) => state.knowledgeBusy);
   const error = useChatStore((state) => state.error);
@@ -33,6 +40,9 @@ export default function App(): JSX.Element {
   const loadSessions = useChatStore((state) => state.loadSessions);
   const createSession = useChatStore((state) => state.createSession);
   const selectSession = useChatStore((state) => state.selectSession);
+  const deleteSession = useChatStore((state) => state.deleteSession);
+  const setKnowledgeOnlyMode = useChatStore((state) => state.setKnowledgeOnlyMode);
+  const setKnowledgeScopeId = useChatStore((state) => state.setKnowledgeScopeId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const importKnowledgeFiles = useChatStore((state) => state.importKnowledgeFiles);
   const importKnowledgeFolder = useChatStore((state) => state.importKnowledgeFolder);
@@ -67,6 +77,10 @@ export default function App(): JSX.Element {
     () => sessions.find((session) => session.id === activeSessionId),
     [activeSessionId, sessions]
   );
+  const selectedKnowledgeScope = useMemo(
+    () => knowledgeImports.find((entry) => entry.id === knowledgeScopeId),
+    [knowledgeImports, knowledgeScopeId]
+  );
 
   const handleSend = async (): Promise<void> => {
     const content = draft.trim();
@@ -78,6 +92,19 @@ export default function App(): JSX.Element {
     await sendMessage(content);
   };
 
+  const handleDeleteSession = (session: ChatSession): void => {
+    Modal.confirm({
+      title: copy.deleteSessionConfirmTitle,
+      content: formatDeleteSessionConfirm(locale, session.title),
+      okText: copy.confirm,
+      cancelText: copy.cancel,
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await deleteSession(session.id);
+      },
+    });
+  };
+
   const lastIndexed = knowledge?.lastIndexedAt
     ? timeFormatter.format(new Date(knowledge.lastIndexedAt))
     : copy.noIndexYet;
@@ -86,6 +113,10 @@ export default function App(): JSX.Element {
   const llmStatusLabel = knowledge?.llmEnabled ? copy.enabled : copy.disabled;
   const indexingModeLabel =
     knowledge?.indexingMode === 'incremental' ? copy.incremental : knowledge?.indexingMode ?? copy.none;
+  const noSourceReason = formatNoSourceReason(
+    locale,
+    currentSession?.inspector.debug?.noSourceReason
+  );
 
   return (
     <div className="app-shell">
@@ -112,10 +143,24 @@ export default function App(): JSX.Element {
         </div>
 
         <div className="runtime-strip">
-          <Tag color="volcano">
-            {runtime?.autoStarted ? copy.pythonManaged : copy.manualBackend}
-          </Tag>
-          <span className="runtime-url">{runtime?.backendUrl ?? copy.runtimeLoading}</span>
+          <div className="runtime-strip-main">
+            <Tag color="volcano">
+              {runtime?.autoStarted ? copy.pythonManaged : copy.manualBackend}
+            </Tag>
+            <Button
+              size="small"
+              type="text"
+              className="inline-toggle"
+              onClick={() => setShowRuntimeDetails((value) => !value)}
+            >
+              {showRuntimeDetails ? copy.hideDetails : copy.showDetails}
+            </Button>
+          </div>
+          {showRuntimeDetails ? (
+            <div className="runtime-details">
+              <span className="runtime-url">{runtime?.backendUrl ?? copy.runtimeLoading}</span>
+            </div>
+          ) : null}
         </div>
 
         <section className="knowledge-panel">
@@ -153,104 +198,163 @@ export default function App(): JSX.Element {
             <Button size="small" onClick={() => void reindexKnowledge()} loading={knowledgeBusy}>
               {knowledgeBusy ? copy.importing : copy.reindex}
             </Button>
+            <Button
+              size="small"
+              type="text"
+              className="inline-toggle"
+              onClick={() => setShowKnowledgeDetails((value) => !value)}
+            >
+              {showKnowledgeDetails ? copy.hideDetails : copy.showDetails}
+            </Button>
+            <Button
+              size="small"
+              type="text"
+              className="inline-toggle"
+              onClick={() => setShowImportHistory((value) => !value)}
+            >
+              {showImportHistory ? copy.hideHistory : copy.showHistory}
+            </Button>
           </div>
 
-          <div className="knowledge-meta-grid">
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.documents}</span>
-              <strong>{knowledge?.documents ?? 0}</strong>
+          {showKnowledgeDetails ? (
+            <div className="knowledge-meta-grid">
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.documents}</span>
+                <strong>{knowledge?.documents ?? 0}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.indexedSources}</span>
+                <strong>{knowledge?.indexedSources ?? 0}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.deduplicated}</span>
+                <strong>{knowledge?.deduplicatedChunks ?? 0}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.reused}</span>
+                <strong>{knowledge?.reusedChunks ?? 0}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.added}</span>
+                <strong>{knowledge?.newChunks ?? 0}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.removed}</span>
+                <strong>{knowledge?.removedChunks ?? 0}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.lastIndexed}</span>
+                <strong>{lastIndexed}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.embedding}</span>
+                <strong>{knowledge?.embeddingModel ?? copy.fallback}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.provider}</span>
+                <strong>{knowledge?.embeddingProvider ?? copy.none}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.llm}</span>
+                <strong>{llmStatusLabel}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.model}</span>
+                <strong>{knowledge?.activeModel ?? copy.fallback}</strong>
+              </div>
+              <div className="knowledge-stat">
+                <span className="knowledge-stat-label">{copy.indexingMode}</span>
+                <strong>{indexingModeLabel}</strong>
+              </div>
             </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.indexedSources}</span>
-              <strong>{knowledge?.indexedSources ?? 0}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.deduplicated}</span>
-              <strong>{knowledge?.deduplicatedChunks ?? 0}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.reused}</span>
-              <strong>{knowledge?.reusedChunks ?? 0}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.added}</span>
-              <strong>{knowledge?.newChunks ?? 0}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.removed}</span>
-              <strong>{knowledge?.removedChunks ?? 0}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.lastIndexed}</span>
-              <strong>{lastIndexed}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.embedding}</span>
-              <strong>{knowledge?.embeddingModel ?? copy.fallback}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.provider}</span>
-              <strong>{knowledge?.embeddingProvider ?? copy.none}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.llm}</span>
-              <strong>{llmStatusLabel}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.model}</span>
-              <strong>{knowledge?.activeModel ?? copy.fallback}</strong>
-            </div>
-            <div className="knowledge-stat">
-              <span className="knowledge-stat-label">{copy.indexingMode}</span>
-              <strong>{indexingModeLabel}</strong>
-            </div>
-          </div>
+          ) : null}
 
-          <div className="knowledge-history">
-            <div className="section-title">{copy.importedHistory}</div>
-            {knowledgeImports.length ? (
-              knowledgeImports.map((entry) => (
-                <div key={entry.id} className="knowledge-import-card">
-                  <div className="knowledge-import-top">
-                    <strong>{entry.label}</strong>
-                    <Tag color={entry.mode === 'folder' ? 'blue' : 'purple'}>{entry.mode}</Tag>
+          {showImportHistory ? (
+            <div className="knowledge-history">
+              <div className="section-title">{copy.importedHistory}</div>
+              {knowledgeImports.length ? (
+                knowledgeImports.map((entry) => (
+                  <div key={entry.id} className="knowledge-import-card">
+                    <div className="knowledge-import-top">
+                      <strong>{entry.label}</strong>
+                      <div className="knowledge-import-tags">
+                        {knowledgeScopeId === entry.id ? (
+                          <Tag color="gold">{copy.activeScope}</Tag>
+                        ) : null}
+                        <Tag color={entry.mode === 'folder' ? 'blue' : 'purple'}>{entry.mode}</Tag>
+                      </div>
+                    </div>
+                    <p>{entry.rootPath}</p>
+                    <p className="knowledge-import-names">{entry.sourceNames.join(', ')}</p>
+                    <div className="knowledge-import-footer">
+                      <span>
+                        {entry.fileCount} {copy.filesUnit} | {timeFormatter.format(new Date(entry.updatedAt))}
+                      </span>
+                      <div className="knowledge-import-actions">
+                        <Button
+                          size="small"
+                          type={knowledgeScopeId === entry.id ? 'default' : 'text'}
+                          disabled={knowledgeBusy}
+                          onClick={() =>
+                            setKnowledgeScopeId(knowledgeScopeId === entry.id ? undefined : entry.id)
+                          }
+                        >
+                          {knowledgeScopeId === entry.id ? copy.clearScope : copy.useAsScope}
+                        </Button>
+                        <Button
+                          size="small"
+                          danger
+                          disabled={knowledgeBusy}
+                          onClick={() => void deleteKnowledgeImport(entry.rootPath)}
+                        >
+                          {copy.deleteImport}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                  <p>{entry.rootPath}</p>
-                  <div className="knowledge-import-footer">
-                    <span>
-                      {entry.fileCount} {copy.filesUnit} | {timeFormatter.format(new Date(entry.updatedAt))}
-                    </span>
-                    <Button
-                      size="small"
-                      danger
-                      disabled={knowledgeBusy}
-                      onClick={() => void deleteKnowledgeImport(entry.rootPath)}
-                    >
-                      {copy.deleteImport}
-                    </Button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="knowledge-empty">{copy.noImports}</p>
-            )}
-          </div>
+                ))
+              ) : (
+                <p className="knowledge-empty">{copy.noImports}</p>
+              )}
+            </div>
+          ) : null}
         </section>
 
         <div className="session-list">
           {sessions.map((session) => (
-            <button
+            <div
               key={session.id}
               className={`session-card ${session.id === activeSessionId ? 'active' : ''}`}
               onClick={() => selectSession(session.id)}
-              type="button"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  selectSession(session.id);
+                }
+              }}
+              role="button"
+              tabIndex={0}
             >
               <div className="session-card-top">
                 <strong>{session.title}</strong>
-                <span>{timeFormatter.format(new Date(session.updatedAt))}</span>
+                <div className="session-card-actions">
+                  <span>{timeFormatter.format(new Date(session.updatedAt))}</span>
+                  <Button
+                    size="small"
+                    type="text"
+                    danger
+                    className="session-delete-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleDeleteSession(session);
+                    }}
+                  >
+                    {copy.deleteSession}
+                  </Button>
+                </div>
               </div>
               <p>{getSessionPreview(session, copy.startConversation)}</p>
-            </button>
+            </div>
           ))}
         </div>
       </aside>
@@ -299,6 +403,38 @@ export default function App(): JSX.Element {
         </div>
 
         <div className="composer">
+          <div className="composer-toggles">
+            <label className="composer-toggle" htmlFor="knowledge-only-switch">
+              <div>
+                <strong>{copy.knowledgeOnly}</strong>
+                <span>{copy.knowledgeOnlyHint}</span>
+              </div>
+              <Switch
+                id="knowledge-only-switch"
+                size="small"
+                checked={knowledgeOnlyMode}
+                onChange={setKnowledgeOnlyMode}
+              />
+            </label>
+            <div className="composer-toggle composer-toggle-stack">
+              <div>
+                <strong>{copy.scopeKnowledge}</strong>
+                <span>{copy.scopeKnowledgeHint}</span>
+              </div>
+              <Select
+                allowClear
+                size="small"
+                className="scope-select"
+                placeholder={copy.allKnowledge}
+                value={selectedKnowledgeScope?.id}
+                options={knowledgeImports.map((entry) => ({
+                  value: entry.id,
+                  label: `${entry.label} (${entry.fileCount} ${copy.filesUnit})`,
+                }))}
+                onChange={(value) => setKnowledgeScopeId(value)}
+              />
+            </div>
+          </div>
           <TextArea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -332,7 +468,7 @@ export default function App(): JSX.Element {
           <div className="section-title">{copy.generation}</div>
           <p>
             {currentSession?.inspector.generationMode
-              ? `${generationLabel}${currentSession?.inspector.model ? ` | ${copy.model} ${currentSession.inspector.model}` : ''}`
+              ? `${generationLabel}${currentSession?.inspector.model ? ` | ${copy.model} ${currentSession.inspector.model}` : ''}${currentSession?.inspector.knowledgeScopeLabel ? ` | ${copy.scope} ${currentSession.inspector.knowledgeScopeLabel}` : ''}`
               : copy.noGeneration}
           </p>
         </section>
@@ -382,6 +518,50 @@ export default function App(): JSX.Element {
           ) : (
             <p>{copy.noSources}</p>
           )}
+        </section>
+
+        <section className="inspector-section">
+          <div className="section-title">{copy.retrievalDebug}</div>
+          <div className="knowledge-meta-grid">
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.knowledgeCandidates}</span>
+              <strong>{currentSession?.inspector.debug?.knowledgeCandidates ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.knowledgeKept}</span>
+              <strong>{currentSession?.inspector.debug?.knowledgeKept ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.memoryCandidates}</span>
+              <strong>{currentSession?.inspector.debug?.memoryCandidates ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.memoryKept}</span>
+              <strong>{currentSession?.inspector.debug?.memoryKept ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.filteredByScope}</span>
+              <strong>{currentSession?.inspector.debug?.knowledgeFilteredByScope ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.filteredByThreshold}</span>
+              <strong>
+                {(currentSession?.inspector.debug?.knowledgeFilteredByThreshold ?? 0) +
+                  (currentSession?.inspector.debug?.memoryFilteredByThreshold ?? 0)}
+              </strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.mergedCandidates}</span>
+              <strong>{currentSession?.inspector.debug?.mergedCandidates ?? 0}</strong>
+            </div>
+            <div className="knowledge-stat">
+              <span className="knowledge-stat-label">{copy.finalSources}</span>
+              <strong>{currentSession?.inspector.debug?.finalSources ?? 0}</strong>
+            </div>
+          </div>
+          <p>
+            {copy.noSourceReason}: {noSourceReason}
+          </p>
         </section>
       </aside>
     </div>

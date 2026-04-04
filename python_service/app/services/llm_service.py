@@ -51,9 +51,10 @@ class LLMService:
         summary: str,
         facts: list[str],
         sources: list[dict[str, str]],
+        knowledge_only: bool = False,
     ) -> str:
         return self._complete(
-            self._answer_messages(query, summary, facts, sources),
+            self._answer_messages(query, summary, facts, sources, knowledge_only=knowledge_only),
             model=self.settings.llm_model,
             temperature=self.settings.llm_temperature,
         )
@@ -64,8 +65,9 @@ class LLMService:
         summary: str,
         facts: list[str],
         sources: list[dict[str, str]],
+        knowledge_only: bool = False,
     ) -> Iterator[str]:
-        messages = self._answer_messages(query, summary, facts, sources)
+        messages = self._answer_messages(query, summary, facts, sources, knowledge_only=knowledge_only)
         response = self._request_completion(
             messages,
             model=self.settings.llm_model,
@@ -194,16 +196,25 @@ class LLMService:
         summary: str,
         facts: list[str],
         sources: list[dict[str, str]],
+        knowledge_only: bool = False,
     ) -> list[dict[str, str]]:
+        system_prompt = (
+            "You are Synapse, a desktop RAG assistant. "
+            "Answer in the same language as the user's latest query. "
+            "Use retrieved evidence when it is relevant, be explicit about uncertainty, "
+            "and keep responses structured and practical."
+        )
+        if knowledge_only:
+            system_prompt += (
+                " Only answer from the retrieved knowledge sources in this turn. "
+                "Do not rely on chat memory, assumptions, or outside knowledge. "
+                "If the retrieved sources are insufficient, say so clearly."
+            )
+
         return [
             {
                 "role": "system",
-                "content": (
-                    "You are Synapse, a desktop RAG assistant. "
-                    "Answer in the same language as the user's latest query. "
-                    "Use retrieved evidence when it is relevant, be explicit about uncertainty, "
-                    "and keep responses structured and practical."
-                ),
+                "content": system_prompt,
             },
             {
                 "role": "user",
@@ -212,7 +223,12 @@ class LLMService:
                     f"Short-term summary:\n{summary or '(none)'}\n\n"
                     f"Long-term memory:\n{self._format_list(facts)}\n\n"
                     f"Retrieved sources:\n{self._format_sources(sources)}\n\n"
-                    "Please answer the user. When sources are available, reference them naturally."
+                    + (
+                        "Please answer only from the retrieved sources. "
+                        "If there is not enough evidence, say the knowledge base does not provide enough information."
+                        if knowledge_only
+                        else "Please answer the user. When sources are available, reference them naturally."
+                    )
                 ),
             },
         ]

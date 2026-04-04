@@ -27,15 +27,32 @@ export interface RetrievalSource {
   strategy: string;
 }
 
+export interface RetrievalDebug {
+  knowledgeStrategy: string;
+  knowledgeScopePrefix?: string | null;
+  knowledgeCandidates: number;
+  knowledgeKept: number;
+  knowledgeFilteredByScope: number;
+  knowledgeFilteredByThreshold: number;
+  memoryCandidates: number;
+  memoryKept: number;
+  memoryFilteredByThreshold: number;
+  mergedCandidates: number;
+  finalSources: number;
+  noSourceReason?: string | null;
+}
+
 export type GenerationMode = 'llm' | 'fallback';
 
 export interface SessionInspector {
   summary: string;
   facts: MemoryFact[];
   sources: RetrievalSource[];
+  debug?: RetrievalDebug;
   rewrittenQuery?: string;
   generationMode?: GenerationMode;
   model?: string;
+  knowledgeScopeLabel?: string;
 }
 
 export interface ChatSession {
@@ -89,6 +106,8 @@ export interface KnowledgeImportEntry {
   mode: 'files' | 'folder';
   label: string;
   rootPath: string;
+  sourcePrefix: string;
+  sourceNames: string[];
   fileCount: number;
   updatedAt: string;
 }

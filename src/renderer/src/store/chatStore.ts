@@ -22,6 +22,8 @@ interface ChatStore {
   runtime?: RuntimeConfig;
   knowledge?: KnowledgeStatus;
   knowledgeImports: KnowledgeImportEntry[];
+  knowledgeOnlyMode: boolean;
+  knowledgeScopeId?: string;
   sending: boolean;
   knowledgeBusy: boolean;
   error?: string;
@@ -30,6 +32,9 @@ interface ChatStore {
   loadSessions: () => Promise<void>;
   createSession: () => Promise<void>;
   selectSession: (sessionId: string) => void;
+  deleteSession: (sessionId: string) => Promise<void>;
+  setKnowledgeOnlyMode: (enabled: boolean) => void;
+  setKnowledgeScopeId: (scopeId?: string) => void;
   sendMessage: (content: string) => Promise<void>;
   importKnowledgeFiles: () => Promise<void>;
   importKnowledgeFolder: () => Promise<void>;
@@ -55,9 +60,17 @@ const normalizeInspector = (inspector: SessionInspector): SessionInspector => ({
   rewrittenQuery: inspector.rewrittenQuery,
   facts: inspector.facts,
   sources: inspector.sources,
+  debug: inspector.debug,
   generationMode: inspector.generationMode,
   model: inspector.model,
+  knowledgeScopeLabel: inspector.knowledgeScopeLabel,
 });
+
+const resolveScopeId = (
+  scopeId: string | undefined,
+  knowledgeImports: KnowledgeImportEntry[],
+): string | undefined =>
+  knowledgeImports.some((entry) => entry.id === scopeId) ? scopeId : undefined;
 
 async function resolveRuntime(state: ChatStore): Promise<RuntimeConfig> {
   return state.runtime ?? window.electronAPI.getRuntimeConfig();
@@ -69,6 +82,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   runtime: undefined,
   knowledge: undefined,
   knowledgeImports: [],
+  knowledgeOnlyMode: false,
+  knowledgeScopeId: undefined,
   sending: false,
   knowledgeBusy: false,
   error: undefined,
@@ -101,6 +116,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         runtime,
         knowledge,
         knowledgeImports,
+        knowledgeScopeId: resolveScopeId(get().knowledgeScopeId, knowledgeImports),
         knowledgeError,
         error: undefined,
       });
@@ -113,6 +129,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       runtime,
       knowledge,
       knowledgeImports,
+      knowledgeScopeId: resolveScopeId(get().knowledgeScopeId, knowledgeImports),
       knowledgeError,
       error: undefined,
     });
@@ -130,9 +147,34 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   selectSession: (sessionId) => {
     set({ activeSessionId: sessionId });
   },
+  deleteSession: async (sessionId) => {
+    const remainingSessions = await window.electronAPI.deleteSession(sessionId);
+    if (remainingSessions.length > 0) {
+      set({
+        sessions: remainingSessions,
+        activeSessionId:
+          get().activeSessionId === sessionId ? remainingSessions[0]?.id : get().activeSessionId,
+      });
+      return;
+    }
+
+    const locale = readStoredLocale() ?? 'en-US';
+    const session = await window.electronAPI.createSession(messages[locale].newSessionTitle);
+    set({
+      sessions: [session],
+      activeSessionId: session.id,
+    });
+  },
+  setKnowledgeOnlyMode: (enabled) => {
+    set({ knowledgeOnlyMode: enabled });
+  },
+  setKnowledgeScopeId: (scopeId) => {
+    set({ knowledgeScopeId: scopeId });
+  },
   sendMessage: async (content) => {
     const state = get();
     const session = state.sessions.find((item) => item.id === state.activeSessionId);
+    const selectedScope = state.knowledgeImports.find((entry) => entry.id === state.knowledgeScopeId);
 
     if (!session || !content.trim() || state.sending) {
       return;
@@ -178,6 +220,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         payload: {
           session_id: session.id,
           query: userMessage.content,
+          knowledge_only: state.knowledgeOnlyMode,
+          knowledge_scope_prefix: selectedScope?.sourcePrefix,
+          knowledge_scope_label: selectedScope?.label,
           history: toMessagePayload([...session.messages, userMessage]),
         },
         onDelta: (delta) => {
@@ -220,6 +265,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           rewrittenQuery: finalEvent.rewritten_query,
           generationMode: finalEvent.generation_mode,
           model: finalEvent.model ?? undefined,
+          knowledgeScopeLabel: finalEvent.knowledge_scope_label ?? undefined,
+          debug: finalEvent.debug
+            ? {
+                knowledgeStrategy: finalEvent.debug.knowledge_strategy,
+                knowledgeScopePrefix: finalEvent.debug.knowledge_scope_prefix,
+                knowledgeCandidates: finalEvent.debug.knowledge_candidates,
+                knowledgeKept: finalEvent.debug.knowledge_kept,
+                knowledgeFilteredByScope: finalEvent.debug.knowledge_filtered_by_scope,
+                knowledgeFilteredByThreshold: finalEvent.debug.knowledge_filtered_by_threshold,
+                memoryCandidates: finalEvent.debug.memory_candidates,
+                memoryKept: finalEvent.debug.memory_kept,
+                memoryFilteredByThreshold: finalEvent.debug.memory_filtered_by_threshold,
+                mergedCandidates: finalEvent.debug.merged_candidates,
+                finalSources: finalEvent.debug.final_sources,
+                noSourceReason: finalEvent.debug.no_source_reason ?? undefined,
+              }
+            : undefined,
           facts: finalEvent.facts.map((fact) => ({
             id: fact.id,
             content: fact.content,
@@ -309,10 +371,12 @@ ${copy.backendStartHint}`,
         imported_paths: result.importedPaths,
       });
       const locale = readStoredLocale() ?? 'en-US';
+      const knowledgeImports = await window.electronAPI.listKnowledgeImports();
       set({
         runtime,
         knowledge,
-        knowledgeImports: await window.electronAPI.listKnowledgeImports(),
+        knowledgeImports,
+        knowledgeScopeId: resolveScopeId(get().knowledgeScopeId, knowledgeImports),
         knowledgeBusy: false,
         knowledgeNotice: formatImportedNotice(locale, result.importedCount),
       });
@@ -340,10 +404,12 @@ ${copy.backendStartHint}`,
         imported_paths: result.importedPaths,
       });
       const locale = readStoredLocale() ?? 'en-US';
+      const knowledgeImports = await window.electronAPI.listKnowledgeImports();
       set({
         runtime,
         knowledge,
-        knowledgeImports: await window.electronAPI.listKnowledgeImports(),
+        knowledgeImports,
+        knowledgeScopeId: resolveScopeId(get().knowledgeScopeId, knowledgeImports),
         knowledgeBusy: false,
         knowledgeNotice: formatImportedNotice(locale, result.importedCount),
       });
@@ -367,6 +433,7 @@ ${copy.backendStartHint}`,
         runtime,
         knowledge,
         knowledgeImports,
+        knowledgeScopeId: resolveScopeId(get().knowledgeScopeId, knowledgeImports),
         knowledgeBusy: false,
       });
     } catch (error) {
@@ -390,6 +457,7 @@ ${copy.backendStartHint}`,
         runtime,
         knowledge,
         knowledgeImports,
+        knowledgeScopeId: resolveScopeId(get().knowledgeScopeId, knowledgeImports),
         knowledgeBusy: false,
         knowledgeNotice: formatReindexNotice(locale, knowledge.documents),
       });

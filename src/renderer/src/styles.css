@@ -87,11 +87,25 @@ textarea {
 
 .runtime-strip {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 10px;
   padding: 0 22px 14px;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.runtime-strip-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.runtime-details {
+  padding: 10px 12px;
+  border: 1px solid rgba(129, 81, 43, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 247, 240, 0.52);
 }
 
 .runtime-url {
@@ -99,6 +113,11 @@ textarea {
   max-width: 100%;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.inline-toggle {
+  padding-inline: 6px !important;
+  color: var(--muted) !important;
 }
 
 .knowledge-panel {
@@ -187,6 +206,10 @@ textarea {
   word-break: break-word;
 }
 
+.knowledge-import-names {
+  font-size: 0.78rem;
+}
+
 .knowledge-import-top,
 .knowledge-import-footer {
   display: flex;
@@ -197,6 +220,13 @@ textarea {
 
 .knowledge-import-footer {
   margin-top: 10px;
+}
+
+.knowledge-import-tags,
+.knowledge-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .knowledge-import-footer span {
@@ -241,6 +271,16 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.session-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-delete-button {
+  padding-inline: 4px !important;
 }
 
 .session-card p,
@@ -318,6 +358,42 @@ textarea {
 
 .composer {
   padding: 0 22px 22px;
+}
+
+.composer-toggles {
+  margin-bottom: 12px;
+}
+
+.composer-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(129, 81, 43, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 251, 247, 0.88);
+}
+
+.composer-toggle-stack {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.composer-toggle strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.92rem;
+}
+
+.composer-toggle span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.scope-select {
+  width: 100%;
 }
 
 .composer .ant-input {

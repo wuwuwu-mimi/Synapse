@@ -15,6 +15,12 @@ export interface AppMessages {
   composerPlaceholder: string;
   composerHint: string;
   send: string;
+  knowledgeOnly: string;
+  knowledgeOnlyHint: string;
+  scopeKnowledge: string;
+  scopeKnowledgeHint: string;
+  allKnowledge: string;
+  scope: string;
   shortSummary: string;
   noSummary: string;
   queryRewrite: string;
@@ -23,12 +29,26 @@ export interface AppMessages {
   noMemory: string;
   confidence: string;
   ragSources: string;
+  retrievalDebug: string;
+  knowledgeCandidates: string;
+  knowledgeKept: string;
+  memoryCandidates: string;
+  memoryKept: string;
+  filteredByScope: string;
+  filteredByThreshold: string;
+  mergedCandidates: string;
+  finalSources: string;
+  noSourceReason: string;
   noSources: string;
   fused: string;
   lexical: string;
   vector: string;
   startConversation: string;
   newSessionTitle: string;
+  deleteSession: string;
+  confirm: string;
+  cancel: string;
+  deleteSessionConfirmTitle: string;
   failedToSend: string;
   backendUnavailable: string;
   backendStartHint: string;
@@ -39,8 +59,15 @@ export interface AppMessages {
   importFolder: string;
   importedHistory: string;
   deleteImport: string;
+  useAsScope: string;
+  clearScope: string;
+  activeScope: string;
   noImports: string;
   filesUnit: string;
+  showDetails: string;
+  hideDetails: string;
+  showHistory: string;
+  hideHistory: string;
   reindex: string;
   importing: string;
   documents: string;
@@ -90,6 +117,12 @@ export const messages: Record<AppLocale, AppMessages> = {
     composerPlaceholder: '可以询问记忆链路、检索设计，或桌面端架构。',
     composerHint: 'Enter 发送，Shift + Enter 换行',
     send: '发送',
+    knowledgeOnly: '仅基于知识库回答',
+    knowledgeOnlyHint: '开启后，本轮回答只使用检索到的知识库内容，不使用会话记忆。',
+    scopeKnowledge: '知识范围',
+    scopeKnowledgeHint: '可限制只在某一批已导入知识中检索。',
+    allKnowledge: '全部知识',
+    scope: '范围',
     shortSummary: '短期摘要',
     noSummary: '暂时还没有摘要。',
     queryRewrite: '查询改写',
@@ -98,12 +131,26 @@ export const messages: Record<AppLocale, AppMessages> = {
     noMemory: '暂时还没有命中长期记忆。',
     confidence: '置信度',
     ragSources: 'RAG 来源',
+    retrievalDebug: '检索调试',
+    knowledgeCandidates: '知识候选',
+    knowledgeKept: '知识保留',
+    memoryCandidates: '记忆候选',
+    memoryKept: '记忆保留',
+    filteredByScope: '范围过滤',
+    filteredByThreshold: '阈值过滤',
+    mergedCandidates: '合并候选',
+    finalSources: '最终来源',
+    noSourceReason: '无结果原因',
     noSources: '暂时还没有检索证据。',
     fused: '融合',
     lexical: '词法',
     vector: '向量',
     startConversation: '开始一段新对话...',
     newSessionTitle: '新会话',
+    deleteSession: '删除会话',
+    confirm: '确认',
+    cancel: '取消',
+    deleteSessionConfirmTitle: '确认删除会话',
     failedToSend: '发送消息失败',
     backendUnavailable: '后端不可用',
     backendStartHint: '请先安装 Python 依赖并启动 FastAPI 服务。',
@@ -114,8 +161,15 @@ export const messages: Record<AppLocale, AppMessages> = {
     importFolder: '导入文件夹',
     importedHistory: '导入历史',
     deleteImport: '删除',
+    useAsScope: '设为范围',
+    clearScope: '清除范围',
+    activeScope: '当前范围',
     noImports: '暂时还没有导入记录。',
     filesUnit: '个文件',
+    showDetails: '展开详情',
+    hideDetails: '收起详情',
+    showHistory: '展开历史',
+    hideHistory: '收起历史',
     reindex: '重新索引',
     importing: '处理中...',
     documents: '分块数',
@@ -161,6 +215,12 @@ export const messages: Record<AppLocale, AppMessages> = {
     composerPlaceholder: 'Ask about memory flow, retrieval design, or desktop architecture.',
     composerHint: 'Enter to send, Shift + Enter for a new line',
     send: 'Send',
+    knowledgeOnly: 'Knowledge-only answers',
+    knowledgeOnlyHint: 'When enabled, this turn answers only from retrieved knowledge base evidence.',
+    scopeKnowledge: 'Knowledge scope',
+    scopeKnowledgeHint: 'Optionally limit retrieval to one imported batch.',
+    allKnowledge: 'All knowledge',
+    scope: 'Scope',
     shortSummary: 'Short Summary',
     noSummary: 'No summary yet.',
     queryRewrite: 'Query Rewrite',
@@ -169,12 +229,26 @@ export const messages: Record<AppLocale, AppMessages> = {
     noMemory: 'No long-term memory hit yet.',
     confidence: 'Confidence',
     ragSources: 'RAG Sources',
+    retrievalDebug: 'Retrieval Debug',
+    knowledgeCandidates: 'Knowledge candidates',
+    knowledgeKept: 'Knowledge kept',
+    memoryCandidates: 'Memory candidates',
+    memoryKept: 'Memory kept',
+    filteredByScope: 'Filtered by scope',
+    filteredByThreshold: 'Filtered by threshold',
+    mergedCandidates: 'Merged candidates',
+    finalSources: 'Final sources',
+    noSourceReason: 'No-source reason',
     noSources: 'No retrieval evidence yet.',
     fused: 'Fused',
     lexical: 'Lexical',
     vector: 'Vector',
     startConversation: 'Start a new conversation...',
     newSessionTitle: 'New Session',
+    deleteSession: 'Delete chat',
+    confirm: 'Confirm',
+    cancel: 'Cancel',
+    deleteSessionConfirmTitle: 'Delete this chat?',
     failedToSend: 'Failed to send message',
     backendUnavailable: 'Backend unavailable',
     backendStartHint: 'Install Python dependencies and start the FastAPI service first.',
@@ -185,8 +259,15 @@ export const messages: Record<AppLocale, AppMessages> = {
     importFolder: 'Import Folder',
     importedHistory: 'Import History',
     deleteImport: 'Delete',
+    useAsScope: 'Use as scope',
+    clearScope: 'Clear scope',
+    activeScope: 'Active scope',
     noImports: 'No imported batches yet.',
     filesUnit: 'files',
+    showDetails: 'Show details',
+    hideDetails: 'Hide details',
+    showHistory: 'Show history',
+    hideHistory: 'Hide history',
     reindex: 'Reindex',
     importing: 'Working...',
     documents: 'Chunks',
@@ -246,4 +327,31 @@ export function formatReindexNotice(locale: AppLocale, count: number): string {
   return locale === 'zh-CN'
     ? `索引已刷新，当前共有 ${count} 个知识分块。`
     : `Index refreshed. ${count} chunks are available.`;
+}
+
+export function formatNoSourceReason(locale: AppLocale, reason?: string | null): string {
+  if (!reason) {
+    return locale === 'zh-CN' ? '无' : 'None';
+  }
+
+  const zh: Record<string, string> = {
+    scope_filtered_all: '当前选择的知识范围没有命中任何候选。',
+    threshold_filtered: '有候选被召回，但全部被阈值过滤掉了。',
+    memory_filtered: '仅命中了记忆候选，但它们都被阈值过滤掉了。',
+    no_match: '当前查询没有召回相关候选。',
+  };
+  const en: Record<string, string> = {
+    scope_filtered_all: 'The selected knowledge scope produced no candidates.',
+    threshold_filtered: 'Candidates were found, but all were filtered out by thresholds.',
+    memory_filtered: 'Only memory candidates were found, and they were filtered out by thresholds.',
+    no_match: 'The current query did not retrieve relevant candidates.',
+  };
+
+  return locale === 'zh-CN' ? zh[reason] ?? reason : en[reason] ?? reason;
+}
+
+export function formatDeleteSessionConfirm(locale: AppLocale, title: string): string {
+  return locale === 'zh-CN'
+    ? `删除后将无法恢复「${title}」中的消息记录。`
+    : `This permanently removes the messages in "${title}".`;
 }
